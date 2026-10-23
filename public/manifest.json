@@ -1,0 +1,18 @@
+{
+  "name": "Centro de Bienestar Animal La Perla - Alcaldía de Medellín",
+  "short_name": "CBA La Perla",
+  "description": "Sistema Oficial de Planilla Médica, Censo y Lector RFID W91A - Modo Offline / Local",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#059669",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
