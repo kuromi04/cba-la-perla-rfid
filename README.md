@@ -10,6 +10,18 @@
 
 ---
 
+## 📸 Banner Oficial de la Interfaz
+
+<p align="center">
+  <img src="docs/screenshots/app_banner.png" alt="Banner Oficial - Lector RFID & Kardex Médico CBA" width="100%" style="border-radius: 18px; box-shadow: 0 15px 35px rgba(0,0,0,0.4);" />
+</p>
+
+<p align="center">
+  <em>Capturas reales de la aplicación móvil en campo: Módulo de Lectura RFID W91A (Izquierda) y Módulo de Kardex & Semáforo Clínico (Derecha).</em>
+</p>
+
+---
+
 ## ⚖️ Declaración de Propiedad Intelectual y Derechos de Autor
 
 > **IMPORTANTE — SOFTWARE PROPIETARIO:**
@@ -32,18 +44,6 @@ Esta plataforma es una **Progressive Web Application (PWA) de Grado Clínico** c
 4. **Planillas Médicas Segregadas:** Módulos separados para caninos y felinos (Gatera con más de 460 pacientes digitalizados con historia clínica).
 5. **Checklist de Turnos y Links Mágicos:** Asignación de tareas operativas y clínicas a personal sin necesidad de contraseñas.
 6. **Subida Masiva W91A:** Descarga y procesamiento en lote de la memoria interna de 100 registros del lector de chip.
-
----
-
-## 📸 Capturas de la Interfaz y Flujo en Campo
-
-<p align="center">
-  <img src="docs/screenshots/lector_w91a.jpg" alt="Lector RFID W91A en Campo" width="45%" style="border-radius: 12px; margin: 4px;" />
-  <img src="docs/screenshots/planilla_caninos.jpg" alt="Planilla Caninos Digitalizada" width="45%" style="border-radius: 12px; margin: 4px;" />
-</p>
-<p align="center">
-  <em>Izquierda: Escaneo con lector RFID W91A. Derecha: Digitalización y sincronización de datos clínicos.</em>
-</p>
 
 ---
 
