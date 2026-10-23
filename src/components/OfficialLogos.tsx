@@ -38,20 +38,18 @@ export const LaPerlaLogo: React.FC<{ className?: string }> = ({ className = "h-9
 );
 
 /**
- * Crédito de Desarrollador Oficial:
- * "Realizado por tiendastelegram by Kuromi04"
+ * Crédito y Derechos de Autor Oficiales:
+ * © 2026 tiendastelegram by Kuromi04
  */
 export const DeveloperCredit: React.FC = () => (
-  <footer className="text-center py-4 text-[10px] text-slate-400 select-none border-t border-slate-200/80 mt-6 bg-slate-50/50">
-    <div className="flex items-center justify-center gap-1.5 font-medium">
-      <span>Alcaldía de Medellín • CBA La Perla</span>
-      <span>•</span>
-      <span className="text-slate-600 font-bold">
-        Realizado por <span className="text-indigo-600 font-black">tiendastelegram</span> by <span className="text-pink-600 font-black">Kuromi04</span>
+  <footer className="text-center py-4 text-[10px] text-slate-500 select-none border-t border-slate-200/80 mt-6 bg-slate-50/50">
+    <div className="flex flex-col items-center justify-center gap-1 font-medium">
+      <span className="font-bold text-slate-700">
+        © 2026 Desarrollado por <span className="text-indigo-600 font-black">tiendastelegram</span> by <span className="text-pink-600 font-black">Kuromi04</span>
+      </span>
+      <span className="text-[9px] text-slate-400">
+        Software Propietario • Todos los derechos reservados
       </span>
     </div>
-    <p className="text-[9px] text-slate-400 mt-0.5">
-      Sistema Oficial de Planilla Médica, Censo & Lector RFID W91A
-    </p>
   </footer>
 );
