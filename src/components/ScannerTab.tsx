@@ -28,6 +28,7 @@ import { CanilCardModal } from "./CanilCardModal";
 import { RegisterNewAnimalModal } from "./RegisterNewAnimalModal";
 import { ParsedClinicalIntent } from "@/lib/aiParser";
 import { StaffMember } from "@/lib/staff";
+import { OFFICIAL_GATERA_LOCATIONS, getAllGateraLocations } from "@/lib/gateraLocations";
 
 interface ScannerTabProps {
   initialChip?: string;
@@ -55,6 +56,13 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
   const [editLocation, setEditLocation] = useState("");
   const [editMedication, setEditMedication] = useState("");
   const [editPendientes, setEditPendientes] = useState("");
+  const [locationsList, setLocationsList] = useState<string[]>(OFFICIAL_GATERA_LOCATIONS);
+
+  useEffect(() => {
+    getAllGateraLocations().then((locs) => {
+      if (locs && locs.length > 0) setLocationsList(locs);
+    });
+  }, []);
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -711,13 +719,28 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
               <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl space-y-3 text-xs animate-in fade-in">
                 <h4 className="font-bold text-amber-900 uppercase">Modificar Datos de este Animal (Vet/Admin)</h4>
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">Mover a Nueva Ubicación:</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-bold text-slate-700">Mover a Nueva Ubicación (Columna B):</label>
+                    <span className="text-[10px] text-amber-800 font-bold bg-amber-100 px-2 py-0.5 rounded-full">
+                      {locationsList.length} Ubicaciones
+                    </span>
+                  </div>
                   <input
                     type="text"
+                    list="scanner-locations-list"
                     value={editLocation}
                     onChange={(e) => setEditLocation(e.target.value)}
-                    className="w-full p-2.5 bg-white border rounded-xl font-bold"
+                    className="w-full p-2.5 bg-white border border-amber-300 rounded-xl font-bold uppercase"
+                    placeholder="Ej. CUARENTENA 1, UPH 11, HOSPITAL 2... (o escribe una nueva)"
                   />
+                  <span className="text-[10px] text-amber-700 font-medium block mt-1">
+                    💡 Puedes elegir de la lista o <strong>escribir cualquier ubicación nueva</strong>.
+                  </span>
+                  <datalist id="scanner-locations-list">
+                    {locationsList.map((loc) => (
+                      <option key={loc} value={loc} />
+                    ))}
+                  </datalist>
                 </div>
                 <div>
                   <label className="font-bold text-slate-700 block mb-1">Modificar Medicación:</label>

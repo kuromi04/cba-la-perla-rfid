@@ -4,6 +4,7 @@ import { db, Animal, KardexRecord } from "@/lib/db";
 import { GateraCat } from "@/lib/gateraData";
 import { exportGateraExcel } from "@/lib/excelGenerator";
 import { importExcelFile } from "@/lib/excelImporter";
+import { OFFICIAL_GATERA_LOCATIONS } from "@/lib/gateraLocations";
 import {
   FileSpreadsheet,
   Download,
@@ -95,7 +96,18 @@ export const PlanillaEditorTab: React.FC<PlanillaEditorTabProps> = ({
 
   // Catálogos dinámicos basados en la base de datos real para autocompletado inteligente
   const uniqueLocations = useMemo(() => {
-    return Array.from(new Set(gateraList.map((c) => c.ubicacion).filter(Boolean))).sort();
+    const set = new Set<string>(OFFICIAL_GATERA_LOCATIONS);
+    gateraList.forEach((c) => {
+      if (c.ubicacion && c.ubicacion.trim()) set.add(c.ubicacion.trim().toUpperCase());
+    });
+    return Array.from(set).sort((a, b) => {
+      const matchA = a.match(/^([A-Za-z\s]+)\s*(\d+)/);
+      const matchB = b.match(/^([A-Za-z\s]+)\s*(\d+)/);
+      if (matchA && matchB && matchA[1] === matchB[1]) {
+        return parseInt(matchA[2], 10) - parseInt(matchB[2], 10);
+      }
+      return a.localeCompare(b);
+    });
   }, [gateraList]);
 
   const uniqueColors = useMemo(() => {
@@ -433,10 +445,13 @@ export const PlanillaEditorTab: React.FC<PlanillaEditorTabProps> = ({
     // 1. Filtro por categoría rápida
     if (gateraFilter === "TTO_OCTUBRE" && (!cat.medicacion || cat.medicacion === "Ninguno")) return false;
     if (gateraFilter === "FERAL" && !cat.isFeral) return false;
-    if (gateraFilter === "MATERNAS" && !cat.ubicacion.toUpperCase().includes("MATERNA")) return false;
     if (gateraFilter === "CUARENTENA" && !cat.ubicacion.toUpperCase().includes("CUARENTENA")) return false;
-    if (gateraFilter === "PATIOS" && !cat.ubicacion.toUpperCase().includes("PATIO")) return false;
+    if (gateraFilter === "UPH" && !cat.ubicacion.toUpperCase().includes("UPH")) return false;
     if (gateraFilter === "HOSPITAL" && !cat.ubicacion.toUpperCase().includes("HOSPITAL")) return false;
+    if (gateraFilter === "MATERNAS" && !cat.ubicacion.toUpperCase().includes("MATERN")) return false;
+    if (gateraFilter === "VIF_LEUCEMIA" && !(cat.ubicacion.toUpperCase().includes("VIF") || cat.ubicacion.toUpperCase().includes("VILEF") || cat.ubicacion.toUpperCase().includes("FELV") || cat.ubicacion.toUpperCase().includes("LEUCEMIA") || cat.ubicacion.toUpperCase().includes("POSITIVO"))) return false;
+    if (gateraFilter === "PATIOS" && (!cat.ubicacion.toUpperCase().includes("PATIO") || cat.ubicacion.toUpperCase().includes("FERAL") || cat.ubicacion.toUpperCase().includes("VIF") || cat.ubicacion.toUpperCase().includes("LEUCEMIA"))) return false;
+    if (gateraFilter === "JAULAS" && !cat.ubicacion.toUpperCase().includes("JAULA")) return false;
 
     // 2. Filtro por término de búsqueda
     if (searchTerm) {
@@ -578,13 +593,16 @@ export const PlanillaEditorTab: React.FC<PlanillaEditorTabProps> = ({
         {/* Pestañas de Filtros Rápidos */}
         <div className="flex gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
           {[
-            { id: "TODOS", label: `Todos los Gatos (${gateraList.length})` },
-            { id: "TTO_OCTUBRE", label: `Con Tratamiento (${gateraList.filter((c) => c.medicacion && c.medicacion !== "Ninguno").length})` },
+            { id: "TODOS", label: `Todos (${gateraList.length})` },
+            { id: "TTO_OCTUBRE", label: `💊 Con Tratamiento (${gateraList.filter((c) => c.medicacion && c.medicacion !== "Ninguno").length})` },
             { id: "FERAL", label: `⚠️ Ferales (${gateraList.filter((c) => c.isFeral).length})` },
-            { id: "CUARENTENA", label: `Cuarentenas (${gateraList.filter((c) => c.ubicacion.toUpperCase().includes("CUARENTENA")).length})` },
-            { id: "PATIOS", label: `Patios VIF / Adopción` },
-            { id: "MATERNAS", label: `Maternidades` },
-            { id: "HOSPITAL", label: `Hospital Reactivo` },
+            { id: "CUARENTENA", label: `🛑 Cuarentenas (${gateraList.filter((c) => c.ubicacion.toUpperCase().includes("CUARENTENA")).length})` },
+            { id: "UPH", label: `🩺 UPH (${gateraList.filter((c) => c.ubicacion.toUpperCase().includes("UPH")).length})` },
+            { id: "HOSPITAL", label: `🏥 Hospital (${gateraList.filter((c) => c.ubicacion.toUpperCase().includes("HOSPITAL")).length})` },
+            { id: "MATERNAS", label: `🍼 Maternas (${gateraList.filter((c) => c.ubicacion.toUpperCase().includes("MATERN")).length})` },
+            { id: "PATIOS", label: `🌳 Patios Comunes (${gateraList.filter((c) => c.ubicacion.toUpperCase().includes("PATIO") && !c.ubicacion.toUpperCase().includes("FERAL") && !c.ubicacion.toUpperCase().includes("VIF") && !c.ubicacion.toUpperCase().includes("LEUCEMIA")).length})` },
+            { id: "VIF_LEUCEMIA", label: `🧪 VIF / FeLV (${gateraList.filter((c) => c.ubicacion.toUpperCase().includes("VIF") || c.ubicacion.toUpperCase().includes("FELV") || c.ubicacion.toUpperCase().includes("LEUCEMIA") || c.ubicacion.toUpperCase().includes("VILEF") || c.ubicacion.toUpperCase().includes("POSITIVO")).length})` },
+            { id: "JAULAS", label: `📦 Jaulas (${gateraList.filter((c) => c.ubicacion.toUpperCase().includes("JAULA")).length})` },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -761,17 +779,25 @@ export const PlanillaEditorTab: React.FC<PlanillaEditorTabProps> = ({
               {/* Sección 1: Identificación y Ubicación */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">
-                    Nº CANIL (Ubicación Gatera):
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-bold text-slate-700">
+                      Nº CANIL (Ubicación Gatera):
+                    </label>
+                    <span className="text-[9px] text-purple-800 bg-purple-100 font-bold px-1.5 py-0.5 rounded">
+                      {uniqueLocations.length} Ubicaciones
+                    </span>
+                  </div>
                   <input
                     type="text"
                     list="locations-list"
                     value={editingCat.ubicacion}
                     onChange={(e) => setEditingCat({ ...editingCat, ubicacion: e.target.value })}
-                    className="w-full p-2.5 bg-slate-50 border rounded-xl font-black text-slate-900"
-                    placeholder="Ej. CUARENTENA 1"
+                    className="w-full p-2.5 bg-slate-50 border rounded-xl font-black text-slate-900 uppercase"
+                    placeholder="Ej. CUARENTENA 1, UPH 11, HOSPITAL 2... (o escribe una nueva)"
                   />
+                  <span className="text-[10px] text-purple-700 font-medium block mt-0.5">
+                    💡 Puedes seleccionar de la lista o <strong>escribir una nueva ubicación</strong>.
+                  </span>
                 </div>
 
                 <div>
@@ -1048,18 +1074,26 @@ export const PlanillaEditorTab: React.FC<PlanillaEditorTabProps> = ({
             <div className="space-y-3.5 text-xs max-h-[75vh] overflow-y-auto pr-1">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">
-                    Nº CANIL (Ubicación Gatera) *:
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-bold text-slate-700">
+                      Nº CANIL (Ubicación Gatera) *:
+                    </label>
+                    <span className="text-[9px] text-purple-800 bg-purple-100 font-bold px-1.5 py-0.5 rounded">
+                      {uniqueLocations.length} Ubicaciones
+                    </span>
+                  </div>
                   <input
                     type="text"
                     required
                     list="locations-list"
                     value={newCat.ubicacion || ""}
                     onChange={(e) => setNewCat({ ...newCat, ubicacion: e.target.value })}
-                    className="w-full p-2.5 bg-slate-50 border rounded-xl font-black text-slate-900"
-                    placeholder="Ej. CUARENTENA 1"
+                    className="w-full p-2.5 bg-slate-50 border rounded-xl font-black text-slate-900 uppercase"
+                    placeholder="Ej. CUARENTENA 1, UPH 11, HOSPITAL 2... (o escribe una nueva)"
                   />
+                  <span className="text-[10px] text-purple-700 font-medium block mt-0.5">
+                    💡 Puedes seleccionar de la lista o <strong>escribir una nueva ubicación</strong>.
+                  </span>
                 </div>
 
                 <div>

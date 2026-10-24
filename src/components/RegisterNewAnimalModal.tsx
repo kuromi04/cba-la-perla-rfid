@@ -17,6 +17,7 @@ import {
   Stethoscope,
   Scissors,
 } from "lucide-react";
+import { OFFICIAL_GATERA_LOCATIONS, getAllGateraLocations } from "@/lib/gateraLocations";
 
 interface RegisterNewAnimalModalProps {
   isOpen: boolean;
@@ -73,11 +74,24 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
+  const [allLocations, setAllLocations] = useState<string[]>(OFFICIAL_GATERA_LOCATIONS);
+  const [selectedLocCategory, setSelectedLocCategory] = useState<string>("CUARENTENA");
+
   useEffect(() => {
     if (initialMicrochip) {
       setMicrochip(initialMicrochip.trim());
     }
   }, [initialMicrochip]);
+
+  useEffect(() => {
+    if (isOpen) {
+      getAllGateraLocations().then((locs) => {
+        if (locs && locs.length > 0) {
+          setAllLocations(locs);
+        }
+      });
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -309,32 +323,9 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
     <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm p-2 sm:p-4 flex items-center justify-center overscroll-contain">
       {/* DATALISTS DINÁMICOS PARA AUTOCOMPLETADO RÁPIDO */}
       <datalist id="locations-list">
-        <option value="CUARENTENA 1" />
-        <option value="CUARENTENA 2" />
-        <option value="CUARENTENA 3" />
-        <option value="CUARENTENA 4" />
-        <option value="CUARENTENA 5" />
-        <option value="CUARENTENA 6" />
-        <option value="CUARENTENA 7" />
-        <option value="CUARENTENA 8" />
-        <option value="PATIO 1" />
-        <option value="PATIO 2" />
-        <option value="PATIO 3" />
-        <option value="PATIO 4" />
-        <option value="PATIO 5" />
-        <option value="PATIO 6" />
-        <option value="PATIO 7" />
-        <option value="PATIO 8" />
-        <option value="PATIO 9" />
-        <option value="PATIO 10" />
-        <option value="PATIO VIF" />
-        <option value="MATERNIDAD 1" />
-        <option value="MATERNIDAD 2" />
-        <option value="MATERNIDAD 3" />
-        <option value="MATERNIDAD 4" />
-        <option value="HOSPITAL 1" />
-        <option value="HOSPITAL 2" />
-        <option value="JAULA AISLAMIENTO" />
+        {allLocations.map((loc) => (
+          <option key={loc} value={loc} />
+        ))}
       </datalist>
 
       <datalist id="colors-list">
@@ -430,11 +421,16 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
           </div>
 
           {/* 2. Columna B: Nº CANIL / JAULA / UBICACIÓN GATERA */}
-          <div className="p-3.5 bg-indigo-50/80 border border-indigo-200 rounded-2xl space-y-2">
-            <label className="font-black text-indigo-950 block text-[11px] uppercase tracking-wide flex items-center gap-1.5">
-              <MapPin className="w-4 h-4 text-indigo-600" />
-              UBICACIÓN EN GATERA (Nº CANIL / JAULA - COLUMNA B): <span className="text-red-500">*</span>
-            </label>
+          <div className="p-3.5 bg-indigo-50/80 border border-indigo-200 rounded-2xl space-y-2.5">
+            <div className="flex items-center justify-between">
+              <label className="font-black text-indigo-950 block text-[11px] uppercase tracking-wide flex items-center gap-1.5">
+                <MapPin className="w-4 h-4 text-indigo-600" />
+                UBICACIÓN EN GATERA (Nº CANIL / JAULA - COLUMNA B): <span className="text-red-500">*</span>
+              </label>
+              <span className="text-[10px] font-bold text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-full">
+                {allLocations.length} Ubicaciones
+              </span>
+            </div>
             
             <input
               type="text"
@@ -442,23 +438,78 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
               list="locations-list"
               value={location}
               onChange={(e) => setLocation(e.target.value)}
-              placeholder="Ej: CUARENTENA 1, PATIO 2, MATERNIDAD 1, HOSPITAL..."
+              placeholder="Ej: CUARENTENA 1, UPH 11, HOSPITAL 5, MATERNAS 13... (o escribe una nueva)"
               className="w-full p-2.5 bg-white border border-indigo-300 rounded-xl font-bold uppercase text-slate-900 focus:ring-2 focus:ring-indigo-500 shadow-xs"
             />
 
-            {/* Atajos Rápidos */}
-            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-              <span className="text-[10px] text-indigo-700 font-bold">Rápido:</span>
-              {["CUARENTENA 1", "CUARENTENA 2", "CUARENTENA 3", "PATIO 1", "PATIO 2", "PATIO VIF", "MATERNIDAD 1", "HOSPITAL 1"].map((sug) => (
-                <button
-                  key={sug}
-                  type="button"
-                  onClick={() => setLocation(sug)}
-                  className="px-2 py-0.5 bg-white hover:bg-indigo-100 text-indigo-900 border border-indigo-200 rounded-lg text-[10px] font-bold transition-all shadow-2xs"
-                >
-                  {sug}
-                </button>
-              ))}
+            {/* Aviso de Nueva Ubicación Libre */}
+            <p className="text-[10px] text-indigo-700 font-medium leading-tight">
+              💡 Puedes seleccionar cualquiera de la lista o <strong>escribir una ubicación totalmente nueva</strong> (ej. CUARENTENA 20, UPH 33). El sistema la registrará y guardará automáticamente.
+            </p>
+
+            {/* Categorías Rápidas de Ubicación */}
+            <div className="space-y-1.5 pt-1">
+              <span className="text-[10px] text-slate-600 font-bold block uppercase tracking-wider">
+                Selección Rápida por Sección Oficial:
+              </span>
+              <div className="flex flex-wrap gap-1">
+                {[
+                  { label: "🛑 Cuarentenas", prefix: "CUARENTENA" },
+                  { label: "🩺 UPH", prefix: "UPH" },
+                  { label: "🏥 Hospital", prefix: "HOSPITAL" },
+                  { label: "🍼 Maternas", prefix: "MATERN" },
+                  { label: "🌳 Patios", prefix: "PATIO" },
+                  { label: "⚠️ Ferales", prefix: "FERAL" },
+                  { label: "🧪 VIF/FeLV", prefix: "VIF" },
+                  { label: "📦 Jaulas", prefix: "JAULA" },
+                ].map((cat) => (
+                  <button
+                    key={cat.prefix}
+                    type="button"
+                    onClick={() => setSelectedLocCategory(cat.prefix)}
+                    className={`px-2 py-1 rounded-lg text-[10px] font-black transition-all ${
+                      selectedLocCategory === cat.prefix
+                        ? "bg-indigo-600 text-white shadow-xs"
+                        : "bg-white text-indigo-900 border border-indigo-200 hover:bg-indigo-100"
+                    }`}
+                  >
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Botones de ubicaciones filtradas por categoría */}
+              <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto p-1.5 bg-white/70 rounded-xl border border-indigo-100">
+                {allLocations
+                  .filter((loc) => {
+                    const up = loc.toUpperCase();
+                    if (selectedLocCategory === "VIF") {
+                      return up.includes("VIF") || up.includes("VILEF") || up.includes("FELV") || up.includes("LEUCEMIA") || up.includes("POSITIVO");
+                    }
+                    if (selectedLocCategory === "FERAL") {
+                      return up.includes("FERAL");
+                    }
+                    if (selectedLocCategory === "PATIO") {
+                      return up.includes("PATIO") && !up.includes("FERAL") && !up.includes("VIF") && !up.includes("LEUCEMIA");
+                    }
+                    return up.includes(selectedLocCategory);
+                  })
+                  .slice(0, 30)
+                  .map((sug) => (
+                    <button
+                      key={sug}
+                      type="button"
+                      onClick={() => setLocation(sug)}
+                      className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all ${
+                        location === sug
+                          ? "bg-indigo-600 text-white border-indigo-600"
+                          : "bg-white text-slate-800 border-slate-200 hover:bg-indigo-50 hover:border-indigo-300"
+                      }`}
+                    >
+                      {sug}
+                    </button>
+                  ))}
+              </div>
             </div>
           </div>
 
