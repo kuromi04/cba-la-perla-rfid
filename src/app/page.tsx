@@ -9,7 +9,8 @@ import { TurnosTab } from "@/components/TurnosTab";
 import { MagicLinkModal } from "@/components/MagicLinkModal";
 import { LoginModal } from "@/components/LoginModal";
 import { AlcaldiaMedellinLogo, LaPerlaLogo, DeveloperCredit } from "@/components/OfficialLogos";
-import { StaffMember, getAllStaff, canEditAnimals } from "@/lib/staff";
+import { StaffMember, getAllStaff, canEditAnimals, registerStaffMember } from "@/lib/staff";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import {
   Scan,
   TableProperties,
@@ -98,9 +99,27 @@ export default function Home() {
         }
 
         if (token || userId) {
-          const found = staff.find((s) => s.token === token || s.id === userId);
+          let found = staff.find((s) => s.token === token || s.id === userId);
+          if (!found) {
+            const nameParam = params.get("name");
+            const roleParam = params.get("role") as any;
+            if (nameParam) {
+              try {
+                found = await registerStaffMember({
+                  name: decodeURIComponent(nameParam),
+                  role: roleParam || "operario",
+                  area: "gatera",
+                });
+              } catch (e) {
+                console.warn("Auto-register staff from magic link failed:", e);
+              }
+            }
+          }
           if (found) {
             setCurrentUser(found);
+            try {
+              localStorage.setItem("cba_laperla_active_user", found.id);
+            } catch {}
             if (!chipParam) setActiveTab("turnos");
             return;
           }
@@ -170,7 +189,8 @@ export default function Home() {
   const isVetOrAdmin = currentUser ? canEditAnimals(currentUser.role) : false;
 
   return (
-    <main className="min-h-screen bg-slate-100 text-slate-900 flex flex-col max-w-xl mx-auto shadow-2xl">
+    <ErrorBoundary>
+      <main className="min-h-screen bg-slate-100 text-slate-900 flex flex-col max-w-xl mx-auto shadow-2xl">
       {/* 1. Header Oficial: Alcaldía de Medellín & CBA La Perla */}
       <header className="sticky top-0 z-40 bg-slate-900 text-white p-3.5 shadow-md space-y-2.5">
         
@@ -453,5 +473,6 @@ export default function Home() {
         </button>
       </nav>
     </main>
+    </ErrorBoundary>
   );
 }

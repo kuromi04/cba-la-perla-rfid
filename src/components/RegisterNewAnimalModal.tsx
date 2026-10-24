@@ -50,7 +50,9 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
   const [condicionCorporal, setCondicionCorporal] = useState("RANGO 3.0/5"); // Columna 12
   const [estadoSalud, setEstadoSalud] = useState("Saludable"); // Columna 13: Saludable, Regular, Delicado
   
-  // Tratamiento & Clínica (Columnas 14, 15, 16, 17, 18)
+  // Diagnóstico Retroviral Felino: VIF (Inmunodeficiencia) y FeLV (Leucemia)
+  const [vifStatus, setVifStatus] = useState<"NEGATIVO" | "POSITIVO" | "PENDIENTE">("NEGATIVO");
+  const [felvStatus, setFelvStatus] = useState<"NEGATIVO" | "POSITIVO" | "PENDIENTE">("NEGATIVO");
   const [hasTreatment, setHasTreatment] = useState(false);
   const [medicacion, setMedicacion] = useState("");
   const [observacionesMedicas, setObservacionesMedicas] = useState("");
@@ -151,10 +153,36 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
       const gender = isFemale ? "hembra" : "macho";
       const nowIso = new Date().toISOString();
 
-      let compiledNotes = observacionesMedicas.trim();
-      if (isFeral) {
-        compiledNotes = `[ANIMAL FERAL - GUANTES OBLIGATORIOS] ${compiledNotes}`.trim();
-      }
+      const computedRetro: "NEGATIVO" | "VIF_POSITIVO" | "FELV_POSITIVO" | "DOBLE_POSITIVO" | "PENDIENTE" =
+        vifStatus === "POSITIVO" && felvStatus === "POSITIVO"
+          ? "DOBLE_POSITIVO"
+          : vifStatus === "POSITIVO"
+          ? "VIF_POSITIVO"
+          : felvStatus === "POSITIVO"
+          ? "FELV_POSITIVO"
+          : (vifStatus === "PENDIENTE" || felvStatus === "PENDIENTE")
+          ? "PENDIENTE"
+          : "NEGATIVO";
+
+      const retroviralTag =
+        computedRetro === "DOBLE_POSITIVO"
+          ? "[⚠️ DOBLE POSITIVO: VIF+ FeLV+]"
+          : computedRetro === "VIF_POSITIVO"
+          ? "[🩸 VIF+ POSITIVO (Inmunodeficiencia)]"
+          : computedRetro === "FELV_POSITIVO"
+          ? "[🩸 FeLV+ POSITIVO (Leucemia)]"
+          : computedRetro === "PENDIENTE"
+          ? "[⏳ SEROLOGÍA PENDIENTE]"
+          : "[🛡️ VIF- FeLV- NEGATIVO]";
+
+      const compiledNotes = [
+        retroviralTag,
+        observacionesMedicas.trim(),
+        hasTreatment ? `Tratamiento: ${medicacion.trim()} (${sistema})` : "",
+        isFeral ? "⚠️ MANEJO FERAL / GUANTES OBLIGATORIOS" : "",
+      ]
+        .filter(Boolean)
+        .join(" | ");
 
       // 1. Guardar o Actualizar en tabla central: db.animals
       const finalAnimal: Animal = {
@@ -170,6 +198,7 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
         hc: formattedHc,
         isFeral,
         color: formattedColor,
+        tipoIngreso,
         notes: compiledNotes || existingAnimal?.notes || undefined,
         lastCensusDate: nowIso,
         sexoCode,
@@ -177,6 +206,9 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
         observacionesMedicas: compiledNotes,
         tipoSeguimiento: hasTreatment || requiereSeguimiento === "SI" ? tipoSeguimiento : undefined,
         medicoVeterinario,
+        retroviralStatus: computedRetro,
+        vifStatus,
+        felvStatus,
       };
 
       if (existingAnimal?.id) {
@@ -268,6 +300,9 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
         corteUnas,
         limpiezaOidos,
         medicoVeterinario,
+        retroviralStatus: computedRetro,
+        vifStatus,
+        felvStatus,
       };
 
       if (existingCensus?.id) {
@@ -592,11 +627,140 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
                 onChange={(e) => setTipoIngreso(e.target.value)}
                 className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold"
               >
-                <option value="RES">RES (Resguardo)</option>
+                <option value="RES">RES (Rescate)</option>
                 <option value="APM">APM (Atención Médica)</option>
                 <option value="INC">INC (Incautación)</option>
-                <option value="E Y D">E Y D (Entrega y Decomiso)</option>
+                <option value="E Y D">E Y D (Esterilizar y Devolver)</option>
               </select>
+            </div>
+          </div>
+
+          {/* DIAGNÓSTICO RETROVIRAL FELINO: VIF / FeLV (Leucemia e Inmunodeficiencia) */}
+          <div className="p-3.5 bg-gradient-to-br from-purple-50 via-indigo-50 to-pink-50 rounded-2xl border border-purple-200 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-black uppercase text-purple-950 flex items-center gap-1.5">
+                <span>🩸 SEROLOGÍA / RETROVIRUS FELINOS (VIF & FeLV)</span>
+              </span>
+              <span className={`text-[10px] font-black px-2 py-0.5 rounded-lg border ${
+                vifStatus === "POSITIVO" && felvStatus === "POSITIVO"
+                  ? "bg-red-600 text-white border-red-700 animate-pulse"
+                  : vifStatus === "POSITIVO"
+                  ? "bg-amber-500 text-white border-amber-600"
+                  : felvStatus === "POSITIVO"
+                  ? "bg-orange-500 text-white border-orange-600"
+                  : vifStatus === "PENDIENTE" || felvStatus === "PENDIENTE"
+                  ? "bg-slate-200 text-slate-800 border-slate-300"
+                  : "bg-emerald-600 text-white border-emerald-700"
+              }`}>
+                {vifStatus === "POSITIVO" && felvStatus === "POSITIVO"
+                  ? "⚠️ DOBLE POSITIVO"
+                  : vifStatus === "POSITIVO"
+                  ? "VIF (+) POSITIVO"
+                  : felvStatus === "POSITIVO"
+                  ? "FeLV (+) LEUCEMIA"
+                  : vifStatus === "PENDIENTE" || felvStatus === "PENDIENTE"
+                  ? "⏳ PENDIENTE TEST"
+                  : "🛡️ NEGATIVO (VIF- / FeLV-)"}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+              {/* Test VIF */}
+              <div className="bg-white p-2.5 rounded-xl border border-purple-100 space-y-1">
+                <label className="text-[10px] font-black text-slate-700 block uppercase">
+                  VIF (Inmunodeficiencia Felina):
+                </label>
+                <div className="grid grid-cols-3 gap-1 font-bold text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => setVifStatus("NEGATIVO")}
+                    className={`py-1.5 rounded-lg transition-all ${
+                      vifStatus === "NEGATIVO"
+                        ? "bg-emerald-600 text-white shadow-sm"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}
+                  >
+                    Negativo (-)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setVifStatus("POSITIVO")}
+                    className={`py-1.5 rounded-lg transition-all ${
+                      vifStatus === "POSITIVO"
+                        ? "bg-amber-600 text-white shadow-sm"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}
+                  >
+                    VIF (+)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setVifStatus("PENDIENTE")}
+                    className={`py-1.5 rounded-lg transition-all ${
+                      vifStatus === "PENDIENTE"
+                        ? "bg-slate-800 text-white shadow-sm"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}
+                  >
+                    Pendiente
+                  </button>
+                </div>
+              </div>
+
+              {/* Test FeLV */}
+              <div className="bg-white p-2.5 rounded-xl border border-purple-100 space-y-1">
+                <label className="text-[10px] font-black text-slate-700 block uppercase">
+                  FeLV (Leucemia Felina):
+                </label>
+                <div className="grid grid-cols-3 gap-1 font-bold text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => setFelvStatus("NEGATIVO")}
+                    className={`py-1.5 rounded-lg transition-all ${
+                      felvStatus === "NEGATIVO"
+                        ? "bg-emerald-600 text-white shadow-sm"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}
+                  >
+                    Negativo (-)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFelvStatus("POSITIVO")}
+                    className={`py-1.5 rounded-lg transition-all ${
+                      felvStatus === "POSITIVO"
+                        ? "bg-red-600 text-white shadow-sm"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}
+                  >
+                    FeLV (+)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFelvStatus("PENDIENTE")}
+                    className={`py-1.5 rounded-lg transition-all ${
+                      felvStatus === "PENDIENTE"
+                        ? "bg-slate-800 text-white shadow-sm"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}
+                  >
+                    Pendiente
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Sugerencia de Ubicación en Gatera según Resultado Retroviral */}
+            <div className="text-[10px] text-purple-900 bg-white/70 p-2 rounded-xl border border-purple-200 flex items-center justify-between">
+              <span>
+                {vifStatus === "POSITIVO" && felvStatus === "POSITIVO"
+                  ? "📍 Ubicación requerida: Sección DOBLE POSITIVO o Hospitalización aislada."
+                  : vifStatus === "POSITIVO"
+                  ? "📍 Ubicación requerida: Patios VIF (PATIO 1 VIF, PATIO 2-3 VIF) o JAULAS FIV."
+                  : felvStatus === "POSITIVO"
+                  ? "📍 Ubicación requerida: PATIO 7 LEUCEMIA + o JAULAS FELV."
+                  : "📍 Ubicación sugerida: Cuarentenas, UPH, Patios Generales o Adopción."}
+              </span>
             </div>
           </div>
 

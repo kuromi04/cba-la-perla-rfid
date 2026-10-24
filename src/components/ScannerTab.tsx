@@ -624,6 +624,29 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
                 Chip: <strong>{currentAnimal.shortChip || currentAnimal.microchip}</strong>
               </p>
               <p className="text-xs text-slate-700 font-medium mt-1">{currentAnimal.breed}</p>
+              {currentAnimal.species === "gato" && currentAnimal.retroviralStatus && currentAnimal.retroviralStatus !== "PENDIENTE" && (
+                <div className="mt-1.5 flex items-center gap-1.5">
+                  <span
+                    className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                      currentAnimal.retroviralStatus === "DOBLE_POSITIVO"
+                        ? "bg-rose-100 text-rose-900 border border-rose-300"
+                        : currentAnimal.retroviralStatus === "VIF_POSITIVO"
+                        ? "bg-purple-100 text-purple-900 border border-purple-300"
+                        : currentAnimal.retroviralStatus === "FELV_POSITIVO"
+                        ? "bg-amber-100 text-amber-900 border border-amber-300"
+                        : "bg-emerald-100 text-emerald-900 border border-emerald-300"
+                    }`}
+                  >
+                    🧬 {currentAnimal.retroviralStatus === "DOBLE_POSITIVO"
+                      ? "DOBLE POSITIVO (VIF+ / FeLV+)"
+                      : currentAnimal.retroviralStatus === "VIF_POSITIVO"
+                      ? "VIF+ (Inmunodeficiencia Felina)"
+                      : currentAnimal.retroviralStatus === "FELV_POSITIVO"
+                      ? "FeLV+ (Leucemia Felina)"
+                      : "RETROVIRALES: NEGATIVO (VIF- / FeLV-)"}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Ubicación Actual */}

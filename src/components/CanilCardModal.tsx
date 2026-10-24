@@ -160,8 +160,32 @@ export const CanilCardModal: React.FC<CanilCardModalProps> = ({
           </div>
 
           {/* 3. Alertas de Bioseguridad Crítica (Si Aplica) */}
-          {(isCDV || isCuarentena || isFeral) && (
+          {(isCDV || isCuarentena || isFeral || (animal.species === "gato" && animal.retroviralStatus)) && (
             <div className="space-y-1.5">
+              {animal.species === "gato" && animal.retroviralStatus && animal.retroviralStatus !== "PENDIENTE" && (
+                <div
+                  className={`p-2.5 border-2 rounded-2xl flex items-center gap-2 font-black text-xs print:border-black ${
+                    animal.retroviralStatus === "DOBLE_POSITIVO"
+                      ? "bg-red-100 border-red-600 text-red-950"
+                      : animal.retroviralStatus === "VIF_POSITIVO"
+                      ? "bg-purple-100 border-purple-500 text-purple-950"
+                      : animal.retroviralStatus === "FELV_POSITIVO"
+                      ? "bg-amber-100 border-amber-600 text-amber-950"
+                      : "bg-emerald-50 border-emerald-500 text-emerald-950"
+                  }`}
+                >
+                  <ShieldAlert className="w-4 h-4 shrink-0" />
+                  <span>
+                    {animal.retroviralStatus === "DOBLE_POSITIVO"
+                      ? "🧬 BIOSEGURIDAD: DOBLE POSITIVO (VIF+ / FeLV+) - Aislamiento Estricto"
+                      : animal.retroviralStatus === "VIF_POSITIVO"
+                      ? "🧬 SEROLOGÍA FELINA: POSITIVO A VIF (Inmunodeficiencia Felina +)"
+                      : animal.retroviralStatus === "FELV_POSITIVO"
+                      ? "🧬 SEROLOGÍA FELINA: POSITIVO A FeLV (Leucemia Felina +)"
+                      : "🧬 SEROLOGÍA FELINA: NEGATIVO (VIF- / FeLV-)"}
+                  </span>
+                </div>
+              )}
               {isCDV && (
                 <div className="p-3 bg-red-100 border-2 border-red-600 text-red-950 rounded-2xl flex items-center gap-2.5 font-black text-xs print:border-black print:text-black">
                   <ShieldAlert className="w-5 h-5 text-red-700 shrink-0" />

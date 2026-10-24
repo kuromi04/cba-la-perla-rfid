@@ -40,6 +40,9 @@ export interface Animal {
   vacunaLeucemia?: string;
   vacunaRabia?: string;
   desparasitante?: string;
+  retroviralStatus?: "NEGATIVO" | "VIF_POSITIVO" | "FELV_POSITIVO" | "DOBLE_POSITIVO" | "PENDIENTE";
+  vifStatus?: "POSITIVO" | "NEGATIVO" | "PENDIENTE";
+  felvStatus?: "POSITIVO" | "NEGATIVO" | "PENDIENTE";
 }
 
 export interface KardexRecord {
@@ -99,6 +102,9 @@ export interface CensusRecord {
   limpiezaOidos?: string;
   fechaAseo?: string;
   medicoVeterinario?: string;
+  retroviralStatus?: "NEGATIVO" | "VIF_POSITIVO" | "FELV_POSITIVO" | "DOBLE_POSITIVO" | "PENDIENTE";
+  vifStatus?: "POSITIVO" | "NEGATIVO" | "PENDIENTE";
+  felvStatus?: "POSITIVO" | "NEGATIVO" | "PENDIENTE";
 }
 
 export interface ShiftTask {

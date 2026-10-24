@@ -36,7 +36,7 @@ export const MagicLinkModal: React.FC<MagicLinkModalProps> = ({
 
   const origin = typeof window !== "undefined" ? window.location.origin : "http://192.168.0.6:3000";
   const magicUrl = selectedStaff
-    ? `${origin}/?token=${selectedStaff.token}&user=${selectedStaff.id}&role=${selectedStaff.role}&area=${selectedStaff.area}`
+    ? `${origin}/?token=${selectedStaff.token}&user=${selectedStaff.id}&role=${selectedStaff.role}&area=${selectedStaff.area}&name=${encodeURIComponent(selectedStaff.name)}`
     : "";
 
   const [messageCopied, setMessageCopied] = useState(false);

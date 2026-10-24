@@ -380,11 +380,32 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
                 className="p-3 bg-slate-50 rounded-2xl flex items-center justify-between border border-slate-200 text-xs"
               >
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <strong className="text-slate-900">{item.animalName}</strong>
                     <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-indigo-100 text-indigo-800">
                       {item.location}
                     </span>
+                    {item.retroviralStatus && item.retroviralStatus !== "PENDIENTE" && (
+                      <span
+                        className={`text-[9px] font-black px-1.5 py-0.5 rounded ${
+                          item.retroviralStatus === "VIF_POSITIVO"
+                            ? "bg-purple-100 text-purple-900 border border-purple-300"
+                            : item.retroviralStatus === "FELV_POSITIVO"
+                            ? "bg-amber-100 text-amber-900 border border-amber-300"
+                            : item.retroviralStatus === "DOBLE_POSITIVO"
+                            ? "bg-rose-100 text-rose-900 border border-rose-300 font-extrabold"
+                            : "bg-emerald-100 text-emerald-800"
+                        }`}
+                      >
+                        {item.retroviralStatus === "VIF_POSITIVO"
+                          ? "VIF+"
+                          : item.retroviralStatus === "FELV_POSITIVO"
+                          ? "FeLV+"
+                          : item.retroviralStatus === "DOBLE_POSITIVO"
+                          ? "DOBLE+"
+                          : "VIF-/FeLV-"}
+                      </span>
+                    )}
                   </div>
                   <span className="font-mono text-[10px] text-slate-400 block mt-0.5">
                     Chip: {item.microchip} • Verificado por: {item.scannedBy}

@@ -226,14 +226,15 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
     window.print();
   };
 
-  // Filtrado 100% exclusivo de GATERA
+  // Filtrado 100% exclusivo de GATERA con protección contra valores nulos
+  const filterNorm = (staffFilter || "todos").trim().toLowerCase();
   const filteredTasks = tasks.filter((t) => {
     const matchShift = activeShift === "todos" || t.shift === activeShift;
     const matchLabor = activeLabor === "todas" || t.laborType === activeLabor;
     const matchStaff =
-      staffFilter === "todos" ||
-      (t.assignedTo && t.assignedTo.toLowerCase().includes(staffFilter.toLowerCase())) ||
-      (t.completedBy && t.completedBy.toLowerCase().includes(staffFilter.toLowerCase()));
+      filterNorm === "todos" ||
+      (Boolean(t.assignedTo) && t.assignedTo!.toLowerCase().includes(filterNorm)) ||
+      (Boolean(t.completedBy) && t.completedBy!.toLowerCase().includes(filterNorm));
 
     return matchShift && matchLabor && matchStaff;
   });
@@ -301,17 +302,19 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {connectedStaff.map((st) => {
+              if (!st || !st.staff_name) return null;
+              const sName = (st.staff_name || "").toLowerCase();
               const workerTasks = tasks.filter(
                 (t) =>
-                  t.assignedTo?.toLowerCase().includes(st.staff_name.toLowerCase()) ||
-                  t.completedBy?.toLowerCase().includes(st.staff_name.toLowerCase())
+                  (Boolean(t.assignedTo) && t.assignedTo!.toLowerCase().includes(sName)) ||
+                  (Boolean(t.completedBy) && t.completedBy!.toLowerCase().includes(sName))
               );
               const workerDone = workerTasks.filter((t) => t.isCompleted).length;
-              const isSelected = staffFilter.toLowerCase() === st.staff_name.toLowerCase();
+              const isSelected = (staffFilter || "").toLowerCase() === sName;
 
               return (
                 <div
-                  key={st.staff_id}
+                  key={st.staff_id || st.staff_name}
                   onClick={() => setStaffFilter(isSelected ? "todos" : st.staff_name)}
                   className={`p-2.5 rounded-2xl border cursor-pointer transition-all flex items-center justify-between text-xs ${
                     isSelected
@@ -587,11 +590,18 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
 
                   {task.isCompleted && task.completedAt && (
                     <div className="text-[10px] text-emerald-700 font-bold flex items-center gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Administrado por {task.completedBy || "Personal"} a las{" "}
-                      {new Date(task.completedAt).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Administrado por {task.completedBy || "Personal"}
+                      {(() => {
+                        try {
+                          const d = new Date(task.completedAt);
+                          if (!isNaN(d.getTime())) {
+                            return ` a las ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+                          }
+                        } catch {
+                          // ignore formatting errors
+                        }
+                        return "";
+                      })()}
                     </div>
                   )}
                 </div>
