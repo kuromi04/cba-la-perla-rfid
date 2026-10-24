@@ -32,10 +32,10 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
 
-  // Formulario de registro de nuevo empleado (ROL ADMIN EXCLUSIVO Y BLOQUEADO)
+  // Formulario de registro de nuevo empleado (ROL ADMIN EXCLUSIVO Y BLOQUEADO, ÁREA GATERA)
   const [name, setName] = useState("");
   const [role, setRole] = useState<"veterinario" | "auxiliar" | "operario">("veterinario");
-  const [area, setArea] = useState<"caninos" | "gatera" | "ambas">("gatera");
+  const [area, setArea] = useState<"gatera">("gatera");
   const [specialty, setSpecialty] = useState("");
   const [phone, setPhone] = useState("");
 
@@ -309,15 +309,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 
               <div>
                 <label className="font-bold text-slate-700 block mb-1">ÁREA ASIGNADA:</label>
-                <select
-                  value={area}
-                  onChange={(e) => setArea(e.target.value as any)}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                >
-                  <option value="caninos">🐶 Caninos (Triaje/UCE)</option>
-                  <option value="gatera">🐱 Gatera (461 Felinos)</option>
-                  <option value="ambas">🐾 Ambas Áreas</option>
-                </select>
+                <div className="w-full p-2.5 bg-purple-50 border border-purple-200 rounded-xl font-bold text-purple-900 flex items-center gap-1.5">
+                  <span>🐱 Gatera (Exclusivo Albergue)</span>
+                </div>
               </div>
             </div>
 

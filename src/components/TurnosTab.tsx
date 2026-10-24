@@ -35,20 +35,20 @@ import {
 interface TurnosTabProps {
   currentStaffName?: string;
   currentRole?: "operario" | "auxiliar" | "veterinario" | "admin";
-  currentArea?: "caninos" | "gatera" | "ambas";
+  currentArea?: "gatera";
 }
 
 export const TurnosTab: React.FC<TurnosTabProps> = ({
   currentStaffName = "",
   currentRole = "veterinario",
-  currentArea = "ambas",
+  currentArea = "gatera",
 }) => {
-  const isExclusiveGatera = currentArea === "gatera" && currentRole !== "admin";
-  const isExclusiveCaninos = currentArea === "caninos" && currentRole !== "admin";
-  const defaultArea = isExclusiveGatera ? "gatera" : "caninos";
+  const isExclusiveGatera = true;
+  const isExclusiveCaninos = false;
+  const defaultArea = "gatera";
 
   const [tasks, setTasks] = useState<ShiftTask[]>([]);
-  const [turnosArea, setTurnosArea] = useState<"caninos" | "gatera">(defaultArea);
+  const [turnosArea, setTurnosArea] = useState<"caninos" | "gatera">("gatera");
   const [activeShift, setActiveShift] = useState<"todos" | "mañana" | "tarde" | "noche">("todos");
   const [activeLabor, setActiveLabor] = useState<string>("todas");
   const [staffFilter, setStaffFilter] = useState<string>(currentStaffName || "todos");
@@ -169,62 +169,23 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
 
   return (
     <div className="space-y-4 pb-24">
-      {/* Selector Superior: TURNOS CANINOS vs TURNOS GATERA */}
-      {currentRole === "admin" || currentArea === "ambas" ? (
-        <div className="flex p-1 bg-slate-200 rounded-2xl gap-1 shadow-inner">
-          <button
-            type="button"
-            onClick={() => {
-              setTurnosArea("caninos");
-              setStaffFilter("todos");
-            }}
-            className={`w-1/2 py-2.5 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 transition-all ${
-              turnosArea === "caninos"
-                ? "bg-white text-emerald-800 shadow-md"
-                : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            🐶 TURNOS CANINOS ({tasks.filter((t) => t.area === "caninos").length})
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setTurnosArea("gatera");
-              setStaffFilter("todos");
-            }}
-            className={`w-1/2 py-2.5 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 transition-all ${
-              turnosArea === "gatera"
-                ? "bg-white text-purple-900 shadow-md"
-                : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            🐱 TURNOS GATERA ({tasks.filter((t) => t.area === "gatera").length})
-          </button>
-        </div>
-      ) : (
-        <div className={`p-3.5 rounded-2xl border flex items-center justify-between text-xs font-black shadow-sm ${
-          turnosArea === "gatera"
-            ? "bg-purple-50 border-purple-200 text-purple-900"
-            : "bg-emerald-50 border-emerald-200 text-emerald-900"
-        }`}>
-          <div className="flex items-center gap-2">
-            <span className="text-base">{turnosArea === "gatera" ? "🐱" : "🐶"}</span>
-            <div>
-              <span className="block leading-tight">
-                {turnosArea === "gatera" ? "MÓDULO EXCLUSIVO: GATERA (FELINOS)" : "MÓDULO EXCLUSIVO: CANINOS"}
-              </span>
-              <span className="text-[10px] font-medium text-slate-500">
-                Personal asignado a área {turnosArea.toUpperCase()}
-              </span>
-            </div>
+      {/* Banner Superior Exclusivo GATERA */}
+      <div className="p-3.5 rounded-2xl border flex items-center justify-between text-xs font-black shadow-sm bg-purple-50 border-purple-200 text-purple-900">
+        <div className="flex items-center gap-2">
+          <span className="text-base">🐱</span>
+          <div>
+            <span className="block leading-tight">
+              MÓDULO OFICIAL DE TURNOS: GATERA (FELINOS)
+            </span>
+            <span className="text-[10px] font-medium text-slate-500">
+              Personal asignado exclusivamente a GATERA
+            </span>
           </div>
-          <span className={`text-[10px] font-bold px-2.5 py-1 rounded-xl ${
-            turnosArea === "gatera" ? "bg-purple-200 text-purple-900" : "bg-emerald-200 text-emerald-900"
-          }`}>
-            {areaTasks.length} Labores
-          </span>
         </div>
-      )}
+        <span className="text-[10px] font-bold px-2.5 py-1 rounded-xl bg-purple-200 text-purple-900">
+          {areaTasks.length} Labores Activas
+        </span>
+      </div>
 
       {/* 1. Header con Progreso y Opciones de Despacho */}
       <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-200 space-y-4">
@@ -394,10 +355,10 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
             onChange={(e) => setStaffFilter(e.target.value)}
             className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none"
           >
-            <option value="todos">Todos los Trabajadores</option>
-            {staffList.filter((s) => s.area === turnosArea || s.area === "ambas").map((st) => (
+            <option value="todos">Todos los Trabajadores de Gatera</option>
+            {staffList.map((st) => (
               <option key={st.id} value={st.name}>
-                {st.name} ({st.role})
+                {st.name} ({st.role.toUpperCase()})
               </option>
             ))}
           </select>
@@ -471,9 +432,9 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
                         className="bg-white border border-slate-300 text-slate-900 font-bold px-1.5 py-0.5 rounded-md text-[11px]"
                       >
                         <option value="Sin Asignar">Sin Asignar</option>
-                        {staffList.filter((s) => s.area === task.area || s.area === "ambas").map((st) => (
+                        {staffList.map((st) => (
                           <option key={st.id} value={st.name}>
-                            {st.name} ({st.role})
+                            {st.name} ({st.role.toUpperCase()})
                           </option>
                         ))}
                       </select>

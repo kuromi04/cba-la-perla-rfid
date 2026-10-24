@@ -287,7 +287,7 @@ export default function Home() {
           <TurnosTab
             currentStaffName={currentUser?.name || ""}
             currentRole={currentUser?.role || "veterinario"}
-            currentArea={currentUser?.area || "ambas"}
+            currentArea={currentUser?.area || "gatera"}
           />
         )}
         {activeTab === "planilla" && (

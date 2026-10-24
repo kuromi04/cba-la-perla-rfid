@@ -29,7 +29,7 @@ import {
   Calendar,
 } from "lucide-react";
 import { CanilCardModal } from "./CanilCardModal";
-import { StaffMember } from "@/lib/staff";
+import { StaffMember, canEditAnimals } from "@/lib/staff";
 
 interface PlanillaEditorTabProps {
   currentUser?: StaffMember | null;
@@ -40,6 +40,7 @@ export const PlanillaEditorTab: React.FC<PlanillaEditorTabProps> = ({
   currentUser,
   canEdit = true,
 }) => {
+  const isAuthorizedToEdit = canEdit && canEditAnimals(currentUser?.role);
   const [gateraList, setGateraList] = useState<GateraCat[]>([]);
   const [gateraFilter, setGateraFilter] = useState<string>("TODOS");
   const [searchTerm, setSearchTerm] = useState("");
@@ -199,8 +200,8 @@ export const PlanillaEditorTab: React.FC<PlanillaEditorTabProps> = ({
   };
 
   const handleSaveCatEdit = async () => {
-    if (!canEdit) {
-      setFeedback("⛔ Regla de Oro: Solo Médicos Veterinarios y Administradores tienen autorización para modificar registros.");
+    if (!isAuthorizedToEdit) {
+      setFeedback("⛔ Regla de Oro: Solo Médicos Veterinarios y Administradores tienen autorización para modificar registros de Gatera.");
       return;
     }
     if (!editingCat || !editingCat.id) return;

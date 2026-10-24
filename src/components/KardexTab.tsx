@@ -68,12 +68,8 @@ export const KardexTab: React.FC<KardexTabProps> = ({ initialChip = "", currentU
     setAnimalsMap(map);
 
     let filtered = all;
-    // Si el usuario pertenece exclusivamente a gatera o caninos, filtrar por su área
-    if (currentUser?.area === "gatera" && currentUser?.role !== "admin") {
-      filtered = filtered.filter((t) => map[t.microchip]?.species === "gato" || t.area === "gatera");
-    } else if (currentUser?.area === "caninos" && currentUser?.role !== "admin") {
-      filtered = filtered.filter((t) => map[t.microchip]?.species === "perro" || t.area === "caninos");
-    }
+    // Filtro exclusivo Gatera
+    filtered = filtered.filter((t) => map[t.microchip]?.species === "gato" || t.area === "gatera");
 
     if (chipFilter.trim()) {
       filtered = filtered.filter((t) => t.microchip.includes(chipFilter.trim()));
@@ -227,29 +223,16 @@ export const KardexTab: React.FC<KardexTabProps> = ({ initialChip = "", currentU
 
   return (
     <div className="space-y-4 pb-20">
-      {/* Banner de Área Exclusiva */}
-      {currentUser?.area === "gatera" && currentUser?.role !== "admin" && (
-        <div className="p-3.5 bg-purple-50 border border-purple-200 rounded-2xl flex items-center justify-between text-xs font-black text-purple-900 shadow-sm">
-          <span className="flex items-center gap-2">
-            <span>🐱</span>
-            <span>KARDEX CLÍNICO: GATERA (FELINOS)</span>
-          </span>
-          <span className="text-[10px] font-bold bg-purple-200 text-purple-950 px-2 py-0.5 rounded-lg">
-            {treatments.length} Tratamientos Activos
-          </span>
-        </div>
-      )}
-      {currentUser?.area === "caninos" && currentUser?.role !== "admin" && (
-        <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between text-xs font-black text-emerald-900 shadow-sm">
-          <span className="flex items-center gap-2">
-            <span>🐶</span>
-            <span>KARDEX CLÍNICO: CANINOS</span>
-          </span>
-          <span className="text-[10px] font-bold bg-emerald-200 text-emerald-950 px-2 py-0.5 rounded-lg">
-            {treatments.length} Tratamientos Activos
-          </span>
-        </div>
-      )}
+      {/* Banner de Área Exclusiva GATERA */}
+      <div className="p-3.5 bg-purple-50 border border-purple-200 rounded-2xl flex items-center justify-between text-xs font-black text-purple-900 shadow-sm">
+        <span className="flex items-center gap-2">
+          <span>🐱</span>
+          <span>KARDEX CLÍNICO OFICIAL: GATERA (FELINOS)</span>
+        </span>
+        <span className="text-[10px] font-bold bg-purple-200 text-purple-950 px-2 py-0.5 rounded-lg">
+          {treatments.length} Tratamientos Activos
+        </span>
+      </div>
 
       {/* 1. Header & Acciones Rápidas */}
       <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-200 space-y-4">

@@ -5,7 +5,7 @@ export interface StaffMember {
   name: string;
   role: "operario" | "auxiliar" | "veterinario" | "admin";
   specialty?: string;
-  area: "caninos" | "gatera" | "ambas";
+  area: "gatera";
   phone?: string;
   token: string;
   avatarColor: string;
@@ -18,7 +18,7 @@ export const MASTER_ADMIN: StaffMember = {
   name: "Administrador Maestro",
   role: "admin",
   specialty: "Dirección y Control General",
-  area: "ambas",
+  area: "gatera",
   phone: "",
   token: "magic_admin_kuromi_master_cba",
   avatarColor: "bg-purple-900 text-white",
@@ -77,12 +77,19 @@ export async function getAllStaff(): Promise<StaffMember[]> {
   }
 
   // REGLA DE ORO: Solo el usuario creador (MASTER_ADMIN) puede ser 'admin'.
+  // REGLA DE ORO: Solo el usuario creador (MASTER_ADMIN) puede ser 'admin'.
   // Cualquier otro usuario que intente tener 'admin' se normaliza a 'veterinario'.
+  // REGLA GATERA EXCLUSIVA: Todo el personal opera exclusivamente en 'gatera'.
   list = list.map((member) => {
+    let updatedRole = member.role;
     if (member.id !== MASTER_ADMIN.id && member.role === "admin") {
-      return { ...member, role: "veterinario" as const };
+      updatedRole = "veterinario";
     }
-    return member;
+    return {
+      ...member,
+      role: updatedRole,
+      area: "gatera" as const,
+    };
   });
 
   // Asegurar que el Master Admin esté siempre presente al inicio
@@ -98,14 +105,15 @@ export async function getAllStaff(): Promise<StaffMember[]> {
 
 /**
  * Registrar un nuevo empleado.
- * NOTA DE SEGURIDAD: El rol 'admin' está bloqueado; los nuevos registros
- * solo pueden ser 'veterinario', 'auxiliar' u 'operario'.
+ * NOTA DE SEGURIDAD Y ÁREA:
+ * - El rol 'admin' está bloqueado; los nuevos registros solo pueden ser 'veterinario', 'auxiliar' u 'operario'.
+ * - El área está fijada exclusivamente a 'gatera'.
  */
 export async function registerStaffMember(data: {
   name: string;
   role: "operario" | "auxiliar" | "veterinario" | "admin";
   specialty?: string;
-  area: "caninos" | "gatera" | "ambas";
+  area?: "gatera";
   phone?: string;
 }): Promise<StaffMember> {
   // Blindaje: si alguien intenta enviar 'admin', se le asigna 'veterinario'
@@ -131,11 +139,11 @@ export async function registerStaffMember(data: {
     specialty:
       data.specialty?.trim() ||
       (assignedRole === "veterinario"
-        ? "Médico Veterinario"
+        ? "Médico Veterinario Gatera"
         : assignedRole === "auxiliar"
-        ? "Auxiliar Veterinario"
-        : "Operario de Albergue"),
-    area: data.area,
+        ? "Auxiliar Veterinario Gatera"
+        : "Operario de Albergue Gatera"),
+    area: "gatera",
     phone: data.phone?.trim() || "",
     token,
     avatarColor,

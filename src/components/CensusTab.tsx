@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { db, CensusRecord, Animal, KardexRecord, resetDatabaseWithRealData, purgeObsoleteGateraRecords, deduplicateDatabaseRecords } from "@/lib/db";
-import { StaffMember } from "@/lib/staff";
+import { StaffMember, canDeleteRecords } from "@/lib/staff";
 import {
   FileSpreadsheet,
   Download,
@@ -83,7 +83,7 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
   };
 
   const handleExecutePurge = async () => {
-    const isAuthorized = currentUser ? (currentUser.role === "veterinario" || currentUser.role === "admin") : true;
+    const isAuthorized = canDeleteRecords(currentUser?.role);
     if (!isAuthorized) {
       setSyncMessage("⛔ Regla de Oro: Solo Médicos Veterinarios y Administradores tienen autorización para depurar o eliminar registros.");
       return;
@@ -113,13 +113,9 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
     let list = await db.census.orderBy("id").reverse().toArray();
     let animalsList = await db.animals.toArray();
 
-    if (currentUser?.area === "gatera" && currentUser?.role !== "admin") {
-      animalsList = animalsList.filter((a) => a.species === "gato");
-      list = list.filter((c) => c.area === "gatera" || !c.area);
-    } else if (currentUser?.area === "caninos" && currentUser?.role !== "admin") {
-      animalsList = animalsList.filter((a) => a.species === "perro");
-      list = list.filter((c) => c.area === "caninos" || !c.area);
-    }
+    // Filtro exclusivo oficial: Albergue Felino (Gatera)
+    animalsList = animalsList.filter((a) => a.species === "gato");
+    list = list.filter((c) => c.area === "gatera" || !c.area);
 
     setCensusList(list);
     setTotalAnimals(animalsList.length);
@@ -177,15 +173,9 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
       return;
     }
 
-    if (currentUser?.area === "gatera" && currentUser?.role !== "admin") {
-      const gateraCensus = await db.census.where("area").equals("gatera").toArray();
-      for (const c of gateraCensus) if (c.id) await db.census.delete(c.id);
-    } else if (currentUser?.area === "caninos" && currentUser?.role !== "admin") {
-      const caninosCensus = await db.census.where("area").equals("caninos").toArray();
-      for (const c of caninosCensus) if (c.id) await db.census.delete(c.id);
-    } else {
-      await db.census.clear();
-    }
+    // Vaciar lecturas del censo de Gatera
+    const gateraCensus = await db.census.where("area").equals("gatera").toArray();
+    for (const c of gateraCensus) if (c.id) await db.census.delete(c.id);
 
     await loadData();
     setSyncMessage("✨ Censo vaciado con éxito. Listo para comenzar la nueva ronda de lecturas.");
@@ -232,29 +222,16 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
 
   return (
     <div className="space-y-4 pb-20">
-      {/* Banner de Área Exclusiva */}
-      {currentUser?.area === "gatera" && currentUser?.role !== "admin" && (
-        <div className="p-3.5 bg-purple-50 border border-purple-200 rounded-2xl flex items-center justify-between text-xs font-black text-purple-900 shadow-sm">
-          <span className="flex items-center gap-2">
-            <span>🐱</span>
-            <span>CENSO & AUDITORÍA: GATERA (FELINOS)</span>
-          </span>
-          <span className="text-[10px] font-bold bg-purple-200 text-purple-950 px-2 py-0.5 rounded-lg">
-            {totalAnimals} Felinos
-          </span>
-        </div>
-      )}
-      {currentUser?.area === "caninos" && currentUser?.role !== "admin" && (
-        <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between text-xs font-black text-emerald-900 shadow-sm">
-          <span className="flex items-center gap-2">
-            <span>🐶</span>
-            <span>CENSO & AUDITORÍA: CANINOS</span>
-          </span>
-          <span className="text-[10px] font-bold bg-emerald-200 text-emerald-950 px-2 py-0.5 rounded-lg">
-            {totalAnimals} Caninos
-          </span>
-        </div>
-      )}
+      {/* Banner de Área Exclusiva GATERA */}
+      <div className="p-3.5 bg-purple-50 border border-purple-200 rounded-2xl flex items-center justify-between text-xs font-black text-purple-900 shadow-sm">
+        <span className="flex items-center gap-2">
+          <span>🐱</span>
+          <span>CENSO & AUDITORÍA OFICIAL: GATERA (ALBERGUE FELINO)</span>
+        </span>
+        <span className="text-[10px] font-bold bg-purple-200 text-purple-950 px-2 py-0.5 rounded-lg">
+          {totalAnimals} Felinos
+        </span>
+      </div>
 
       {/* Resumen Métricas */}
       <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 space-y-4">

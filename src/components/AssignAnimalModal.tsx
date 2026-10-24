@@ -63,19 +63,12 @@ export const AssignAnimalModal: React.FC<AssignAnimalModalProps> = ({
     if (isOpen) {
       getAllStaff().then((list) => {
         setStaffList(list);
-        const filteredWorkers = list.filter((s) => {
-          if (s.role === "veterinario") return false;
-          if (userArea === "gatera") return s.area === "gatera" || s.area === "ambas";
-          if (userArea === "caninos") return s.area === "caninos" || s.area === "ambas";
-          return true;
-        });
+        const filteredWorkers = list.filter((s) => s.role !== "veterinario");
 
         if (initialAnimal) {
           setSelectedAnimal(initialAnimal);
           setInstruction(initialAnimal.medication || initialAnimal.notes || "Administrar tratamiento según planilla");
-          // Sugerir trabajador según especie
-          const targetArea = initialAnimal.species === "gato" ? "gatera" : "caninos";
-          const match = filteredWorkers.find((s) => s.area === targetArea || s.area === "ambas") || filteredWorkers[0] || null;
+          const match = filteredWorkers[0] || null;
           setAssignedStaff(match);
         } else {
           setSelectedAnimal(null);
@@ -174,8 +167,7 @@ export const AssignAnimalModal: React.FC<AssignAnimalModalProps> = ({
     }
 
     // Auto-sugerir personal apropiado
-    const targetArea = animal.species === "gato" ? "gatera" : "caninos";
-    const match = staffList.find((s) => (s.area === targetArea || s.area === "ambas") && s.role !== "veterinario") || staffList[0] || null;
+    const match = staffList.find((s) => s.role !== "veterinario") || staffList[0] || null;
     if (match) setAssignedStaff(match);
   };
 
@@ -376,13 +368,13 @@ export const AssignAnimalModal: React.FC<AssignAnimalModalProps> = ({
           <label className="text-xs font-black uppercase text-slate-700 block">
             2. Asignar a Auxiliar u Operario:
           </label>
-          {staffList.filter((s) => s.role !== "veterinario" && (userArea === "ambas" ? true : s.area === userArea || s.area === "ambas")).length === 0 ? (
+          {staffList.filter((s) => s.role !== "veterinario").length === 0 ? (
             <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs text-slate-500 text-center">
-              No hay auxiliares u operarios registrados para {userArea === "gatera" ? "Gatera" : userArea === "caninos" ? "Caninos" : "esta área"}. Puedes registrar nuevo personal desde el menú superior o continuar asignando sin operario asignado.
+              No hay auxiliares u operarios registrados para Gatera. Puedes registrar nuevo personal desde el menú superior o continuar asignando sin operario asignado.
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-2">
-              {staffList.filter((s) => s.role !== "veterinario" && (userArea === "ambas" ? true : s.area === userArea || s.area === "ambas")).map((staff) => (
+              {staffList.filter((s) => s.role !== "veterinario").map((staff) => (
                 <div
                   key={staff.id}
                   onClick={() => setAssignedStaff(staff)}
