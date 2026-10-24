@@ -8,6 +8,7 @@ import { CensusTab } from "@/components/CensusTab";
 import { TurnosTab } from "@/components/TurnosTab";
 import { MagicLinkModal } from "@/components/MagicLinkModal";
 import { LoginModal } from "@/components/LoginModal";
+import { SupabaseModal } from "@/components/SupabaseModal";
 import { AlcaldiaMedellinLogo, LaPerlaLogo, DeveloperCredit } from "@/components/OfficialLogos";
 import { StaffMember, getAllStaff, canEditAnimals, registerStaffMember } from "@/lib/staff";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -26,7 +27,12 @@ import {
   ArrowUp,
   Cloud,
 } from "lucide-react";
-import { isSupabaseConfigured, syncAllLocalToSupabase, recordStaffPresence } from "@/lib/supabase";
+import {
+  isSupabaseConfigured,
+  syncAllLocalToSupabase,
+  recordStaffPresence,
+  saveSupabaseCredentials,
+} from "@/lib/supabase";
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<"scanner" | "turnos" | "planilla" | "kardex" | "census">("scanner");
@@ -36,6 +42,7 @@ export default function Home() {
   const [currentUser, setCurrentUser] = useState<StaffMember | null>(null);
   const [isMagicModalOpen, setIsMagicModalOpen] = useState<boolean>(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
+  const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState<boolean>(false);
   const [scannedChipParam, setScannedChipParam] = useState<string>("");
   const [showScrollTop, setShowScrollTop] = useState<boolean>(false);
   const contentRef = React.useRef<HTMLDivElement>(null);
@@ -89,6 +96,16 @@ export default function Home() {
 
       if (typeof window !== "undefined") {
         const params = new URLSearchParams(window.location.search);
+        const sbUrl = params.get("sb_url");
+        const sbKey = params.get("sb_key");
+        if (sbUrl && sbKey) {
+          try {
+            saveSupabaseCredentials(decodeURIComponent(sbUrl), decodeURIComponent(sbKey));
+          } catch (e) {
+            console.warn("Auto-save Supabase credentials from magic link failed:", e);
+          }
+        }
+
         const token = params.get("token");
         const userId = params.get("user");
 
@@ -257,16 +274,26 @@ export default function Home() {
               <span>Link Mágico</span>
             </button>
 
-            {/* Estado Supabase Cloud */}
-            {isSupabaseConfigured() && (
-              <span
-                className="p-1.5 rounded-lg border bg-blue-500/20 text-blue-300 border-blue-500/30 flex items-center gap-1 text-[10px] font-bold"
-                title="Sincronización en la Nube Supabase Activa"
-              >
-                <Cloud className="w-3.5 h-3.5 text-blue-400" />
-                <span className="hidden xs:inline">Nube</span>
+            {/* Botón Estado y Configuración Supabase Cloud */}
+            <button
+              type="button"
+              onClick={() => setIsSupabaseModalOpen(true)}
+              className={`p-1.5 rounded-lg border flex items-center gap-1 text-[10px] font-bold active:scale-95 transition-all ${
+                isSupabaseConfigured()
+                  ? "bg-blue-500/20 text-blue-300 border-blue-500/30 hover:bg-blue-500/30"
+                  : "bg-amber-500/20 text-amber-300 border-amber-500/30 hover:bg-amber-500/30 animate-pulse"
+              }`}
+              title={
+                isSupabaseConfigured()
+                  ? "Supabase Configurado: Clic para ver estado y sincronizar personal"
+                  : "⚠️ Supabase Desconectado: Clic para conectar y ver a los empleados registrados"
+              }
+            >
+              <Cloud className="w-3.5 h-3.5 text-blue-400" />
+              <span className="hidden xs:inline">
+                {isSupabaseConfigured() ? "Nube" : "Conectar"}
               </span>
-            )}
+            </button>
 
             {/* Estado de Red */}
             <span
@@ -373,6 +400,18 @@ export default function Home() {
         isOpen={isMagicModalOpen}
         onClose={() => setIsMagicModalOpen(false)}
         onSelectWorkerSession={handleSelectWorkerSession}
+      />
+
+      {/* Modal de Configuración y Diagnóstico de Supabase Cloud */}
+      <SupabaseModal
+        isOpen={isSupabaseModalOpen}
+        onClose={() => setIsSupabaseModalOpen(false)}
+        onConfigChanged={async () => {
+          const list = await getAllStaff();
+          if (list.length > 0 && !currentUser) {
+            setCurrentUser(list[0]);
+          }
+        }}
       />
 
       {/* 3. Barra de Navegación Inferior Móvil */}

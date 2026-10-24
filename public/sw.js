@@ -1,4 +1,4 @@
-const CACHE_NAME = "cba-laperla-v2";
+const CACHE_NAME = "cba-laperla-v5";
 const ASSETS_TO_CACHE = [
   "/",
   "/manifest.json",
@@ -8,14 +8,15 @@ const ASSETS_TO_CACHE = [
 
 // 1. Instalación y precaching de activos esenciales
 self.addEventListener("install", (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(ASSETS_TO_CACHE);
-    }).then(() => self.skipWaiting())
+    })
   );
 });
 
-// 2. Activación y limpieza de cachés antiguos
+// 2. Activación y limpieza exhaustiva de cachés antiguos
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
@@ -30,15 +31,35 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// 3. Estrategia de Fetch: Stale-While-Revalidate con Fallback a Caché
+// 3. Estrategia de Fetch: Network-First para páginas (garantiza ver cambios en producción),
+// con fallback a Caché para funcionamiento 100% offline en el albergue
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
 
   const url = new URL(event.request.url);
-
-  // No interceptar peticiones a otros orígenes salvo estáticos
   if (url.origin !== self.location.origin) return;
 
+  // Para navegaciones (HTML principal): Red primero, si falla usar caché
+  if (event.request.mode === "navigate") {
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const clone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return networkResponse;
+        })
+        .catch(async () => {
+          const cache = await caches.open(CACHE_NAME);
+          const cached = await cache.match(event.request);
+          return cached || (await cache.match("/"));
+        })
+    );
+    return;
+  }
+
+  // Para otros activos estáticos: Stale-While-Revalidate
   event.respondWith(
     caches.open(CACHE_NAME).then(async (cache) => {
       const cachedResponse = await cache.match(event.request);
@@ -50,10 +71,7 @@ self.addEventListener("fetch", (event) => {
           }
           return networkResponse;
         })
-        .catch(() => {
-          // Si no hay red (sin WiFi), devolver la versión en caché
-          return cachedResponse;
-        });
+        .catch(() => cachedResponse);
 
       return cachedResponse || fetchPromise;
     })

@@ -1,7 +1,8 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { StaffMember, getAllStaff } from "@/lib/staff";
-import { Link2, Copy, Check, MessageSquare, ExternalLink, X, UserPlus, Users } from "lucide-react";
+import { getSupabaseCredentials } from "@/lib/supabase";
+import { Link2, Copy, Check, MessageSquare, ExternalLink, X, UserPlus, Users, RefreshCw } from "lucide-react";
 
 interface MagicLinkModalProps {
   isOpen: boolean;
@@ -23,8 +24,7 @@ export const MagicLinkModal: React.FC<MagicLinkModalProps> = ({
       getAllStaff().then((list) => {
         setStaffList(list);
         if (list.length > 0) {
-          const defaultWorker = list.find((s) => s.role !== "veterinario") || list[0];
-          setSelectedStaff(defaultWorker);
+          setSelectedStaff(list[0]);
         } else {
           setSelectedStaff(null);
         }
@@ -35,8 +35,13 @@ export const MagicLinkModal: React.FC<MagicLinkModalProps> = ({
   if (!isOpen) return null;
 
   const origin = typeof window !== "undefined" ? window.location.origin : "http://192.168.0.6:3000";
+  const creds = getSupabaseCredentials();
+  const sbParams = creds.url && creds.key
+    ? `&sb_url=${encodeURIComponent(creds.url)}&sb_key=${encodeURIComponent(creds.key)}`
+    : "";
+
   const magicUrl = selectedStaff
-    ? `${origin}/?token=${selectedStaff.token}&user=${selectedStaff.id}&role=${selectedStaff.role}&area=${selectedStaff.area}&name=${encodeURIComponent(selectedStaff.name)}`
+    ? `${origin}/?token=${selectedStaff.token}&user=${selectedStaff.id}&role=${selectedStaff.role}&area=${selectedStaff.area}&name=${encodeURIComponent(selectedStaff.name)}${sbParams}`
     : "";
 
   const [messageCopied, setMessageCopied] = useState(false);

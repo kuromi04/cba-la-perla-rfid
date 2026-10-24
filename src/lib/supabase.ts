@@ -2,16 +2,133 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { db, Animal, ShiftTask } from "./db";
 import { StaffMember, MASTER_ADMIN } from "./staff";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+/**
+ * Obtener credenciales de Supabase (desde Variables de Entorno o localStorage)
+ */
+export function getSupabaseCredentials(): { url: string; key: string } {
+  let url = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+  let key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 
-// Cliente seguro: no explota si no están definidas las variables en entorno local
-export const supabase: SupabaseClient | null =
-  supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
+  if (typeof window !== "undefined") {
+    const localUrl = localStorage.getItem("cba_supabase_url");
+    const localKey = localStorage.getItem("cba_supabase_anon_key");
+    if (localUrl) url = localUrl;
+    if (localKey) key = localKey;
+  }
+
+  return { url: url.trim(), key: key.trim() };
+}
+
+let activeClient: SupabaseClient | null = null;
+let lastUrl = "";
+let lastKey = "";
+
+/**
+ * Obtener cliente activo de Supabase inicializado dinámicamente
+ */
+export function getSupabaseClient(): SupabaseClient | null {
+  const { url, key } = getSupabaseCredentials();
+  if (!url || !key) return null;
+
+  if (!activeClient || url !== lastUrl || key !== lastKey) {
+    try {
+      activeClient = createClient(url, key, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+        },
+      });
+      lastUrl = url;
+      lastKey = key;
+    } catch (e) {
+      console.warn("Error creando cliente Supabase:", e);
+      return null;
+    }
+  }
+
+  return activeClient;
+}
+
+/**
+ * Guardar o actualizar credenciales en localStorage
+ */
+export function saveSupabaseCredentials(url: string, key: string): boolean {
+  if (typeof window !== "undefined") {
+    if (url.trim()) localStorage.setItem("cba_supabase_url", url.trim());
+    else localStorage.removeItem("cba_supabase_url");
+
+    if (key.trim()) localStorage.setItem("cba_supabase_anon_key", key.trim());
+    else localStorage.removeItem("cba_supabase_anon_key");
+
+    activeClient = null;
+    lastUrl = "";
+    lastKey = "";
+    return true;
+  }
+  return false;
+}
 
 export const isSupabaseConfigured = (): boolean => {
-  return Boolean(supabaseUrl && supabaseAnonKey);
+  const { url, key } = getSupabaseCredentials();
+  return Boolean(url && key);
 };
+
+// Objeto de compatibilidad hacia atrás
+export const supabase = {
+  from: (table: string) => {
+    const client = getSupabaseClient();
+    if (!client) throw new Error("Supabase no está configurado.");
+    return client.from(table);
+  },
+};
+
+/**
+ * Diagnóstico y prueba de tablas de Supabase
+ */
+export async function testSupabaseConnection(): Promise<{
+  ok: boolean;
+  message: string;
+  tables?: { staff: boolean; staff_presence: boolean; shift_tasks: boolean; animals: boolean };
+}> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { ok: false, message: "No se han configurado la URL o la Anon Key de Supabase." };
+  }
+
+  const tables = {
+    staff: false,
+    staff_presence: false,
+    shift_tasks: false,
+    animals: false,
+  };
+
+  try {
+    const { error: errStaff } = await client.from("staff").select("id").limit(1);
+    tables.staff = !errStaff || errStaff.code !== "42P01";
+
+    const { error: errPres } = await client.from("staff_presence").select("staff_id").limit(1);
+    tables.staff_presence = !errPres || errPres.code !== "42P01";
+
+    const { error: errTasks } = await client.from("shift_tasks").select("id").limit(1);
+    tables.shift_tasks = !errTasks || errTasks.code !== "42P01";
+
+    const { error: errAnim } = await client.from("animals").select("id").limit(1);
+    tables.animals = !errAnim || errAnim.code !== "42P01";
+
+    const allOk = tables.staff && tables.staff_presence && tables.shift_tasks && tables.animals;
+    if (allOk) {
+      return { ok: true, message: "✅ Conexión exitosa y todas las tablas de Gatera están operativas en Supabase.", tables };
+    } else {
+      return {
+        ok: false,
+        message: "⚠️ Conexión establecida pero faltan tablas por crear en Supabase (ejecuta el script SQL en SQL Editor).",
+        tables,
+      };
+    }
+  } catch (err: any) {
+    return { ok: false, message: `Error de conexión con Supabase: ${err.message || err}` };
+  }
+}
 
 export interface ConnectedStaff {
   staff_id: string;
@@ -27,7 +144,8 @@ export interface ConnectedStaff {
  * 1. SINCRONIZACIÓN DE PERSONAL (STAFF)
  */
 export async function syncStaffToSupabase(member: StaffMember): Promise<boolean> {
-  if (!supabase) return false;
+  const client = getSupabaseClient();
+  if (!client) return false;
 
   try {
     const payload = {
@@ -43,7 +161,7 @@ export async function syncStaffToSupabase(member: StaffMember): Promise<boolean>
       updated_at: new Date().toISOString(),
     };
 
-    const { error } = await supabase
+    const { error } = await client
       .from("staff")
       .upsert(payload, { onConflict: "id" });
 
@@ -62,10 +180,11 @@ export async function syncStaffToSupabase(member: StaffMember): Promise<boolean>
  * Obtener todo el personal registrado desde Supabase
  */
 export async function fetchStaffFromSupabase(): Promise<StaffMember[]> {
-  if (!supabase) return [];
+  const client = getSupabaseClient();
+  if (!client) return [];
 
   try {
-    const { data, error } = await supabase
+    const { data, error } = await client
       .from("staff")
       .select("*")
       .order("registered_at", { ascending: true });
@@ -93,10 +212,26 @@ export async function fetchStaffFromSupabase(): Promise<StaffMember[]> {
 }
 
 /**
+ * Eliminar personal de Supabase
+ */
+export async function deleteStaffFromSupabase(id: string): Promise<void> {
+  const client = getSupabaseClient();
+  if (!client) return;
+
+  try {
+    await client.from("staff").delete().eq("id", id);
+    await client.from("staff_presence").delete().eq("staff_id", id);
+  } catch (err) {
+    console.warn("Error deleting staff from Supabase:", err);
+  }
+}
+
+/**
  * 2. PRESENCIA EN VIVO / MONITOREO DE QUIÉN ESTÁ CONECTADO
  */
 export async function recordStaffPresence(member: StaffMember): Promise<void> {
-  if (!supabase || !member?.id) return;
+  const client = getSupabaseClient();
+  if (!client || !member?.id) return;
 
   try {
     const payload = {
@@ -108,11 +243,11 @@ export async function recordStaffPresence(member: StaffMember): Promise<void> {
       device_info: typeof window !== "undefined" ? navigator.userAgent.slice(0, 80) : undefined,
     };
 
-    await supabase
+    await client
       .from("staff_presence")
       .upsert(payload, { onConflict: "staff_id" });
   } catch (err) {
-    // Fail silently without disrupting UI
+    // Fail silently
   }
 }
 
@@ -120,11 +255,12 @@ export async function recordStaffPresence(member: StaffMember): Promise<void> {
  * Obtener personal conectado recientemente (últimos 10 minutos)
  */
 export async function getConnectedStaff(): Promise<ConnectedStaff[]> {
-  if (!supabase) return [];
+  const client = getSupabaseClient();
+  if (!client) return [];
 
   try {
     const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-    const { data, error } = await supabase
+    const { data, error } = await client
       .from("staff_presence")
       .select("*")
       .gte("last_seen", tenMinutesAgo)
@@ -156,12 +292,13 @@ export async function getConnectedStaff(): Promise<ConnectedStaff[]> {
  * 3. SUPERVISIÓN Y CHECKLISTS DE TURNOS EN VIVO
  */
 export async function syncShiftTaskToSupabase(task: ShiftTask): Promise<boolean> {
-  if (!supabase) return false;
+  const client = getSupabaseClient();
+  if (!client) return false;
 
   try {
     const payload = {
-      client_task_id: task.id || null,
-      kardex_id: task.kardexId || null,
+      client_task_id: task.id,
+      kardex_id: task.kardexId,
       animal_name: task.animalName,
       species: "gato",
       microchip: task.microchip,
@@ -172,7 +309,7 @@ export async function syncShiftTaskToSupabase(task: ShiftTask): Promise<boolean>
       is_completed: task.isCompleted,
       completed_at: task.completedAt || null,
       completed_by: task.completedBy || null,
-      is_feral: Boolean(task.isFeral),
+      is_feral: task.isFeral || false,
       notes: task.notes || null,
       area: "gatera",
       assigned_to: task.assignedTo || null,
@@ -183,14 +320,12 @@ export async function syncShiftTaskToSupabase(task: ShiftTask): Promise<boolean>
       updated_at: new Date().toISOString(),
     };
 
-    // Si ya existe un registro con el mismo microchip y turno, actualizarlo
-    const { error } = await supabase
+    const { error } = await client
       .from("shift_tasks")
       .upsert(payload, { onConflict: "microchip,shift,medication" });
 
     if (error) {
-      // Fallback simple insert/update si no hay conflicto compuesto
-      const { error: insErr } = await supabase.from("shift_tasks").insert(payload);
+      const { error: insErr } = await client.from("shift_tasks").insert(payload);
       if (insErr) console.warn("Supabase task sync warning:", insErr.message);
     }
 
@@ -205,10 +340,11 @@ export async function syncShiftTaskToSupabase(task: ShiftTask): Promise<boolean>
  * Cargar tareas de turno desde Supabase para supervisión en vivo
  */
 export async function fetchShiftTasksFromSupabase(): Promise<ShiftTask[]> {
-  if (!supabase) return [];
+  const client = getSupabaseClient();
+  if (!client) return [];
 
   try {
-    const { data, error } = await supabase
+    const { data, error } = await client
       .from("shift_tasks")
       .select("*")
       .eq("area", "gatera")
@@ -248,12 +384,13 @@ export async function fetchShiftTasksFromSupabase(): Promise<ShiftTask[]> {
  * Sincronizar todas las tareas de turno a Supabase
  */
 export async function syncAllTasksToSupabase(tasks: ShiftTask[]): Promise<void> {
-  if (!supabase || tasks.length === 0) return;
+  const client = getSupabaseClient();
+  if (!client || tasks.length === 0) return;
 
   try {
     const rows = tasks.map((t) => ({
-      client_task_id: t.id || null,
-      kardex_id: t.kardexId || null,
+      client_task_id: t.id,
+      kardex_id: t.kardexId,
       animal_name: t.animalName,
       species: "gato",
       microchip: t.microchip,
@@ -264,7 +401,7 @@ export async function syncAllTasksToSupabase(tasks: ShiftTask[]): Promise<void> 
       is_completed: t.isCompleted,
       completed_at: t.completedAt || null,
       completed_by: t.completedBy || null,
-      is_feral: Boolean(t.isFeral),
+      is_feral: t.isFeral || false,
       notes: t.notes || null,
       area: "gatera",
       assigned_to: t.assignedTo || null,
@@ -275,7 +412,7 @@ export async function syncAllTasksToSupabase(tasks: ShiftTask[]): Promise<void> 
       updated_at: new Date().toISOString(),
     }));
 
-    await supabase.from("shift_tasks").upsert(rows);
+    await client.from("shift_tasks").upsert(rows);
   } catch (err) {
     console.warn("Error syncing all tasks to Supabase:", err);
   }
@@ -285,7 +422,8 @@ export async function syncAllTasksToSupabase(tasks: ShiftTask[]): Promise<void> 
  * 4. SINCRONIZACIÓN DE ANIMALES Y CENSO
  */
 export async function syncAnimalToSupabase(animal: Animal): Promise<boolean> {
-  if (!supabase) return false;
+  const client = getSupabaseClient();
+  if (!client) return false;
 
   try {
     const payload = {
@@ -296,6 +434,9 @@ export async function syncAnimalToSupabase(animal: Animal): Promise<boolean> {
       sex: animal.sexoCode?.startsWith("H") ? "hembra" : "macho",
       status: "activo",
       notes: animal.notes || animal.observacionesMedicas,
+      retroviral_status: animal.retroviralStatus || null,
+      vif_status: animal.vifStatus || null,
+      felv_status: animal.felvStatus || null,
       attributes: {
         shortChip: animal.shortChip,
         hc: animal.hc,
@@ -309,11 +450,14 @@ export async function syncAnimalToSupabase(animal: Animal): Promise<boolean> {
         medicoVeterinario: animal.medicoVeterinario,
         requiereSeguimiento: animal.requiereSeguimiento,
         lastCensusDate: animal.lastCensusDate,
+        retroviralStatus: animal.retroviralStatus,
+        vifStatus: animal.vifStatus,
+        felvStatus: animal.felvStatus,
       },
       updated_at: new Date().toISOString(),
     };
 
-    const { error } = await supabase
+    const { error } = await client
       .from("animals")
       .upsert(payload, { onConflict: "microchip" });
 
@@ -329,7 +473,8 @@ export async function syncAnimalToSupabase(animal: Animal): Promise<boolean> {
 }
 
 export async function syncAllLocalToSupabase(): Promise<{ synced: number; total: number }> {
-  if (!supabase) return { synced: 0, total: 0 };
+  const client = getSupabaseClient();
+  if (!client) return { synced: 0, total: 0 };
 
   try {
     const localAnimals = await db.animals.where("species").equals("gato").toArray();
@@ -346,6 +491,9 @@ export async function syncAllLocalToSupabase(): Promise<{ synced: number; total:
         sex: a.sexoCode?.startsWith("H") ? "hembra" : "macho",
         status: "activo",
         notes: a.notes || a.observacionesMedicas,
+        retroviral_status: a.retroviralStatus || null,
+        vif_status: a.vifStatus || null,
+        felv_status: a.felvStatus || null,
         attributes: {
           shortChip: a.shortChip,
           hc: a.hc,
@@ -358,11 +506,14 @@ export async function syncAllLocalToSupabase(): Promise<{ synced: number; total:
           edad: a.edad,
           medicoVeterinario: a.medicoVeterinario,
           lastCensusDate: a.lastCensusDate,
+          retroviralStatus: a.retroviralStatus,
+          vifStatus: a.vifStatus,
+          felvStatus: a.felvStatus,
         },
         updated_at: new Date().toISOString(),
       }));
 
-      const { error } = await supabase
+      const { error } = await client
         .from("animals")
         .upsert(rows, { onConflict: "microchip" });
 

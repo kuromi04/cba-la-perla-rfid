@@ -12,6 +12,8 @@ import {
   CheckCircle2,
   Shield,
   Lock,
+  RefreshCw,
+  Cloud,
 } from "lucide-react";
 
 interface LoginModalProps {
@@ -162,6 +164,21 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         {/* PESTAÑA 1: LISTA DE PERSONAL REGISTRADO */}
         {activeTab === "lista" && (
           <div className="space-y-2">
+            <div className="flex items-center justify-between pb-1 px-1">
+              <span className="text-[11px] font-bold text-slate-500">
+                Selecciona tu usuario para iniciar sesión:
+              </span>
+              <button
+                type="button"
+                onClick={refreshStaff}
+                disabled={loading}
+                className="text-[11px] text-emerald-700 hover:text-emerald-900 font-bold flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded-lg transition-all"
+                title="Sincronizar personal desde Supabase"
+              >
+                <RefreshCw className={`w-3 h-3 ${loading ? "animate-spin" : ""}`} />
+                <span>{loading ? "Sincronizando..." : "Sincronizar Nube"}</span>
+              </button>
+            </div>
             {staffList.length === 0 ? (
               <div className="p-8 text-center bg-slate-50 rounded-3xl border border-slate-200 space-y-3">
                 <Users className="w-10 h-10 text-slate-300 mx-auto" />

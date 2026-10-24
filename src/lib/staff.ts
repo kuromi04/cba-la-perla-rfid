@@ -215,11 +215,8 @@ export async function deleteStaffMember(id: string): Promise<void> {
   // Eliminar en Supabase en la nube
   if (typeof window !== "undefined" && navigator.onLine) {
     try {
-      const { supabase } = await import("./supabase");
-      if (supabase) {
-        await supabase.from("staff").delete().eq("id", id);
-        await supabase.from("staff_presence").delete().eq("staff_id", id);
-      }
+      const { deleteStaffFromSupabase } = await import("./supabase");
+      await deleteStaffFromSupabase(id);
     } catch (err) {
       console.warn("Error deleting staff from Supabase:", err);
     }

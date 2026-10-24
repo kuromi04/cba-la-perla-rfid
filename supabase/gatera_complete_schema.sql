@@ -93,10 +93,18 @@ CREATE TABLE IF NOT EXISTS animals (
     status TEXT NOT NULL DEFAULT 'activo',
     photo_url TEXT,
     notes TEXT,
+    retroviral_status TEXT,
+    vif_status TEXT,
+    felv_status TEXT,
     attributes JSONB DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Migraciones automáticas por si la tabla ya existía previamente
+ALTER TABLE animals ADD COLUMN IF NOT EXISTS retroviral_status TEXT;
+ALTER TABLE animals ADD COLUMN IF NOT EXISTS vif_status TEXT;
+ALTER TABLE animals ADD COLUMN IF NOT EXISTS felv_status TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_animals_microchip ON animals(microchip);
 CREATE INDEX IF NOT EXISTS idx_animals_species ON animals(species);
