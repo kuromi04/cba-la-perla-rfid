@@ -216,12 +216,6 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
     setSyncMessage("Sincronizando censo dinámico con la nube (base + nuevos ingresos en campo)...");
     try {
       await resetDatabaseWithRealData();
-      if (typeof window !== "undefined" && navigator.onLine) {
-        try {
-          const { syncAnimalsBidirectional } = await import("@/lib/db");
-          await syncAnimalsBidirectional();
-        } catch {}
-      }
       await loadData();
       setSyncMessage("✅ ¡Censo sincronizado con éxito! Registros base y nuevos ingresos en campo actualizados.");
     } catch (e: any) {
