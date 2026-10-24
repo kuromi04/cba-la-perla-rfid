@@ -22,6 +22,7 @@ import {
   UserCheck,
   XCircle,
   ChevronDown,
+  ArrowUp,
 } from "lucide-react";
 
 export default function Home() {
@@ -33,6 +34,40 @@ export default function Home() {
   const [isMagicModalOpen, setIsMagicModalOpen] = useState<boolean>(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
   const [scannedChipParam, setScannedChipParam] = useState<string>("");
+  const [showScrollTop, setShowScrollTop] = useState<boolean>(false);
+  const contentRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const windowOffset = window.scrollY || document.documentElement.scrollTop;
+      const containerOffset = contentRef.current?.scrollTop || 0;
+      if (windowOffset > 180 || containerOffset > 180) {
+        setShowScrollTop(true);
+      } else {
+        setShowScrollTop(false);
+      }
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    const container = contentRef.current;
+    if (container) {
+      container.addEventListener("scroll", handleScroll, { passive: true });
+    }
+
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      if (container) {
+        container.removeEventListener("scroll", handleScroll);
+      }
+    };
+  }, []);
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    if (contentRef.current) {
+      contentRef.current.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
 
   useEffect(() => {
     // 1. Cargar datos 100% reales de los archivos Excel en IndexedDB
@@ -230,7 +265,7 @@ export default function Home() {
       </header>
 
       {/* 2. Contenido Dinámico según Pestaña */}
-      <div className="flex-1 p-3.5 pb-28 overflow-y-auto">
+      <div ref={contentRef} className="flex-1 p-3.5 pb-36 overflow-y-auto">
         {activeTab === "scanner" && (
           <ScannerTab
             initialChip={scannedChipParam}
@@ -265,6 +300,20 @@ export default function Home() {
         {/* Crédito de Desarrollador */}
         <DeveloperCredit />
       </div>
+
+      {/* Botón Flotante "Volver Arriba" (Responsive Mobile & Desktop) */}
+      {showScrollTop && (
+        <button
+          type="button"
+          onClick={scrollToTop}
+          className="fixed bottom-20 right-4 sm:right-[max(1rem,calc(50%-270px))] z-50 p-3 bg-slate-900/90 hover:bg-slate-900 text-white rounded-full shadow-2xl border-2 border-emerald-500/80 active:scale-90 transition-all duration-300 flex items-center justify-center gap-1.5 text-xs font-black backdrop-blur-md animate-in fade-in zoom-in-90"
+          title="Volver al inicio"
+          aria-label="Volver arriba"
+        >
+          <ArrowUp className="w-5 h-5 text-emerald-400" />
+          <span className="text-[10px] uppercase tracking-wider pr-1 hidden xs:inline">Subir</span>
+        </button>
+      )}
 
       {/* Modal de Identificación / Inicio de Sesión de Médicos y Personal */}
       <LoginModal

@@ -598,8 +598,9 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
             )}
           </div>
 
-          {/* Sección de Desparasitante (Bravecto Interno / Externo) */}
+          {/* Sección de Desparasitante (Bravecto Interno / Externo) - EXCLUSIVO CANINOS */}
           {(() => {
+            if (currentAnimal.species !== "perro") return null;
             const bravectoEntry = shelterEntries.find(
               (e) =>
                 e.section === "BRAVECTO" ||

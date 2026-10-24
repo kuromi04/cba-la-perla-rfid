@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { db, Animal } from "@/lib/db";
 import { StaffMember } from "@/lib/staff";
 import {
@@ -11,9 +11,8 @@ import {
   Pill,
   CheckCircle2,
   FileSpreadsheet,
-  FileText,
+  ArrowUp,
   Sparkles,
-  Info,
 } from "lucide-react";
 
 interface RegisterNewAnimalModalProps {
@@ -39,17 +38,13 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
   const [species, setSpecies] = useState<"perro" | "gato">(initialSpecies);
   const [microchip, setMicrochip] = useState(initialMicrochip);
   const [name, setName] = useState("");
-  const [location, setLocation] = useState("");
+  const [location, setLocation] = useState(""); // Columna B del Censo: Nº CANIL / JAULA
   const [hc, setHc] = useState("");
   const [breed, setBreed] = useState(initialSpecies === "gato" ? "Común Europeo" : "Mestizo");
   const [color, setColor] = useState("");
   const [gender, setGender] = useState<"Macho" | "Hembra">("Macho");
   const [age, setAge] = useState("Adulto");
   const [status, setStatus] = useState("activo");
-
-  // Sección de la planilla
-  const [sectionCanino, setSectionCanino] = useState("TRIAJE");
-  const [sectionGatera, setSectionGatera] = useState("CUARENTENA");
 
   // Bioseguridad
   const [isCDV, setIsCDV] = useState(false);
@@ -61,12 +56,16 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
   const [medication, setMedication] = useState("");
   const [system, setSystem] = useState("PREVENTIVO");
   const [totalDoses, setTotalDoses] = useState(7);
-  const [bravecto, setBravecto] = useState("");
+
+  // Desparasitación: BRAVECTO ES EXCLUSIVO DE CANINOS
+  const [bravectoCanino, setBravectoCanino] = useState("1 dosis (Bravecto)");
 
   // Observaciones
   const [notes, setNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (initialMicrochip) {
@@ -75,14 +74,21 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
   }, [initialMicrochip]);
 
   useEffect(() => {
-    if (species === "gato" && breed === "Mestizo") {
-      setBreed("Común Europeo");
-    } else if (species === "perro" && breed === "Común Europeo") {
-      setBreed("Mestizo");
+    if (species === "gato") {
+      if (breed === "Mestizo") setBreed("Común Europeo");
+      setIsCDV(false); // CDV es exclusivo de caninos
+    } else if (species === "perro") {
+      if (breed === "Común Europeo") setBreed("Mestizo");
     }
   }, [species]);
 
   if (!isOpen) return null;
+
+  const scrollToTop = () => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -90,15 +96,18 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
 
     const cleanChip = microchip.trim();
     if (!cleanChip) {
-      setErrorMessage("El microchip es obligatorio.");
+      setErrorMessage("El número de microchip es obligatorio.");
+      scrollToTop();
       return;
     }
     if (!name.trim()) {
       setErrorMessage("Por favor ingresa el nombre o identificación del animal.");
+      scrollToTop();
       return;
     }
     if (!location.trim()) {
-      setErrorMessage("Por favor ingresa la ubicación física en el albergue (ej. CANIL 12, PATIO 3, MATERNIDAD).");
+      setErrorMessage("Por favor ingresa el Nº Canil o Ubicación (Columna B de la Hoja de Censo).");
+      scrollToTop();
       return;
     }
 
@@ -107,7 +116,7 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
     try {
       const shortChip = cleanChip.length > 7 ? cleanChip.slice(-7) : cleanChip;
       const formattedName = name.trim().toUpperCase();
-      const formattedLocation = location.trim().toUpperCase();
+      const formattedLocation = location.trim().toUpperCase(); // Columna B Censo
       const formattedBreed = breed.trim().toUpperCase() || (species === "gato" ? "COMÚN" : "MESTIZO");
       const formattedColor = color.trim().toUpperCase() || "ESTÁNDAR";
       const formattedHc = hc.trim().toUpperCase();
@@ -143,11 +152,21 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
 
       await db.animals.put(newAnimal);
 
-      // 2. Guardar en la Planilla correspondiente
+      // 2. Guardar en la Planilla correspondiente según su ubicación y especie
       if (species === "perro") {
+        // En Caninos, determinar la sección por CDV o ubicación
+        let caninoSection = "TRIAJE";
+        if (isCDV) {
+          caninoSection = "CDV";
+        } else if (formattedLocation.includes("UCE")) {
+          caninoSection = "UCE";
+        } else if (formattedLocation.includes("NOCHE")) {
+          caninoSection = "NOCHE";
+        }
+
         await db.shelterRecords.add({
-          section: (isCDV ? "CDV" : sectionCanino) as any,
-          ubicacion: formattedLocation,
+          section: caninoSection as any,
+          ubicacion: formattedLocation, // Columna B (Nº Canil)
           microchip: cleanChip,
           shortChip,
           descripcion: `${formattedName} (${formattedBreed} - ${formattedColor})`,
@@ -155,12 +174,14 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
           fechaFinal: hasTreatment ? `+${totalDoses} días` : "HNI",
           tipo: "S",
           sistema: hasTreatment ? system : "PREVENTIVO",
-          pendientes: compiledNotes || "INGRESO NUEVO",
-          dosisBravecto: bravecto.trim() || undefined,
+          pendientes: compiledNotes || "INGRESO NUEVO CANIL",
+          // BRAVECTO EXCLUSIVO DE CANINOS
+          dosisBravecto: bravectoCanino.trim() || undefined,
         });
       } else {
+        // En Felinos (Gatera), Bravecto NUNCA se asigna
         await db.gateraRecords.add({
-          ubicacion: formattedLocation,
+          ubicacion: formattedLocation, // Columna B (Nº Canil / Jaula)
           microchip: cleanChip,
           shortChip,
           hc: formattedHc || shortChip.slice(-5),
@@ -179,7 +200,7 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
           medicacion: hasTreatment ? medication.trim() : "",
           sistema: hasTreatment ? system : "GENERAL",
           pendientes: compiledNotes || "INGRESO NUEVO GATERA",
-          desparasitante: bravecto.trim() || "AL DÍA",
+          desparasitante: "AL DÍA (FELINO)", // No Bravecto para gatos
         });
       }
 
@@ -226,16 +247,17 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
     } catch (err: any) {
       console.error("Error al registrar nuevo animal:", err);
       setErrorMessage(`Error al guardar: ${err?.message || "Error desconocido en base de datos"}`);
+      scrollToTop();
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-3 overflow-y-auto">
-      <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 my-auto max-h-[92vh] flex flex-col">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 backdrop-blur-sm p-2.5 sm:p-4 flex items-center justify-center overscroll-contain">
+      <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 my-auto flex flex-col max-h-[90vh]">
         
-        {/* Cabecera del Modal */}
+        {/* Cabecera Fija del Modal */}
         <div className="p-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/30">
@@ -246,7 +268,7 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
                 Registrar Animal Nuevo en Sistema
               </h3>
               <p className="text-[11px] text-slate-400">
-                Suma el animal al Censo, a su Planilla oficial y a la base de datos
+                Se registrará en el Censo, en su Planilla oficial y en la base de datos
               </p>
             </div>
           </div>
@@ -254,13 +276,18 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
             type="button"
             onClick={onClose}
             className="p-1.5 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-all"
+            title="Cerrar"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Formulario con Scroll */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-4 text-xs overflow-y-auto flex-1">
+        {/* Formulario con Scroll Suave */}
+        <div
+          ref={scrollContainerRef}
+          className="p-4 sm:p-5 space-y-4 text-xs overflow-y-auto flex-1 overscroll-contain pb-6"
+          style={{ WebkitOverflowScrolling: "touch" }}
+        >
           {errorMessage && (
             <div className="p-3 bg-red-50 border border-red-300 text-red-900 rounded-2xl flex items-center gap-2 font-bold animate-in fade-in">
               <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
@@ -268,35 +295,35 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
             </div>
           )}
 
-          {/* 1. Selector de Especie */}
-          <div>
-            <label className="font-black text-slate-700 uppercase tracking-wider block mb-1.5 text-[11px]">
-              Especie a Ingresar:
+          {/* 1. UBICACIÓN EN CENSO: Caninos vs Gatera */}
+          <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-1.5">
+            <label className="font-black text-slate-800 uppercase tracking-wider block text-[11px]">
+              UBICACIÓN GENERAL EN CENSO:
             </label>
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={() => setSpecies("perro")}
-                className={`py-3 px-4 rounded-2xl font-black text-xs flex items-center justify-center gap-2 border-2 transition-all ${
+                className={`py-3 px-3 rounded-2xl font-black text-xs flex items-center justify-center gap-2 border-2 transition-all ${
                   species === "perro"
                     ? "bg-emerald-50 border-emerald-600 text-emerald-950 shadow-sm"
-                    : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                    : "bg-white border-slate-200 text-slate-600 hover:bg-slate-100"
                 }`}
               >
-                <span className="text-lg">🐶</span>
-                <span>CANINO (Albergue)</span>
+                <span className="text-xl">🐶</span>
+                <span className="leading-tight">CANINOS (Albergue)</span>
               </button>
               <button
                 type="button"
                 onClick={() => setSpecies("gato")}
-                className={`py-3 px-4 rounded-2xl font-black text-xs flex items-center justify-center gap-2 border-2 transition-all ${
+                className={`py-3 px-3 rounded-2xl font-black text-xs flex items-center justify-center gap-2 border-2 transition-all ${
                   species === "gato"
                     ? "bg-purple-50 border-purple-600 text-purple-950 shadow-sm"
-                    : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                    : "bg-white border-slate-200 text-slate-600 hover:bg-slate-100"
                 }`}
               >
-                <span className="text-lg">🐱</span>
-                <span>FELINO (Gatera)</span>
+                <span className="text-xl">🐱</span>
+                <span className="leading-tight">GATERA (Felinos)</span>
               </button>
             </div>
           </div>
@@ -304,7 +331,7 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
           {/* 2. Microchip */}
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl">
             <label className="font-bold text-slate-600 block mb-1 text-[10px] uppercase tracking-wider">
-              NÚMERO DE MICROCHIP (LEÍDO O MANUAL):
+              NÚMERO DE MICROCHIP (LEÍDO CON W91A O MANUAL):
             </label>
             <input
               type="text"
@@ -316,7 +343,44 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
             />
           </div>
 
-          {/* 3. Nombre y Ubicación */}
+          {/* 3. UBICACIÓN ESPECÍFICA (Nº CANIL / JAULA / COLUMNA B DE CENSO) */}
+          <div className="p-3.5 bg-indigo-50/70 border border-indigo-200 rounded-2xl space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="font-black text-indigo-950 block text-[11px] uppercase tracking-wide flex items-center gap-1.5">
+                <MapPin className="w-4 h-4 text-indigo-600" />
+                UBICACIÓN ESPECÍFICA (Nº CANIL / JAULA - COLUMNA B CENSO): <span className="text-red-500">*</span>
+              </label>
+            </div>
+            
+            <input
+              type="text"
+              required
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              placeholder={species === "gato" ? "Ej: CUARENTENA 1, CUARENTENA 2, MATERNIDAD 1..." : "Ej: CANIL 14, CANIL 2, PATIO 1, UCE 2, TRIAJE..."}
+              className="w-full p-2.5 bg-white border border-indigo-300 rounded-xl font-bold uppercase text-slate-900 focus:ring-2 focus:ring-indigo-500 shadow-sm"
+            />
+
+            {/* Sugerencias Rápidas de Columna B según Área */}
+            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+              <span className="text-[10px] text-indigo-700 font-bold">Rápido:</span>
+              {(species === "perro"
+                ? ["CANIL 1", "CANIL 2", "CANIL 3", "PATIO 1", "PATIO 2", "TRIAJE", "UCE", "CUARENTENA"]
+                : ["CUARENTENA 1", "CUARENTENA 2", "CUARENTENA 3", "MATERNIDAD 1", "MATERNIDAD 2", "PATIO GATERA"]
+              ).map((sug) => (
+                <button
+                  key={sug}
+                  type="button"
+                  onClick={() => setLocation(sug)}
+                  className="px-2 py-0.5 bg-white hover:bg-indigo-100 text-indigo-900 border border-indigo-200 rounded-lg text-[10px] font-bold transition-all shadow-2xs"
+                >
+                  {sug}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 4. Nombre y Datos Físicos */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="font-black text-slate-800 block mb-1 text-[11px]">
@@ -332,26 +396,8 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
               />
             </div>
             <div>
-              <label className="font-black text-slate-800 block mb-1 text-[11px] flex items-center gap-1">
-                <MapPin className="w-3.5 h-3.5 text-indigo-600" />
-                UBICACIÓN EN CENSO: <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                required
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                placeholder={species === "gato" ? "Ej: CUARENTENA GATERA, MATERNIDAD 2" : "Ej: CANIL 14, PATIO 3, UCE 1"}
-                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold uppercase focus:bg-white"
-              />
-            </div>
-          </div>
-
-          {/* 4. Historia Clínica, Sexo y Edad */}
-          <div className="grid grid-cols-3 gap-2">
-            <div>
               <label className="font-bold text-slate-700 block mb-1 text-[10px] uppercase">
-                HISTORIA CLÍNICA:
+                HISTORIA CLÍNICA (HC):
               </label>
               <input
                 type="text"
@@ -361,6 +407,10 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
                 className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-mono font-bold"
               />
             </div>
+          </div>
+
+          {/* 5. Sexo, Edad y Raza */}
+          <div className="grid grid-cols-3 gap-2">
             <div>
               <label className="font-bold text-slate-700 block mb-1 text-[10px] uppercase">
                 SEXO:
@@ -382,13 +432,26 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
                 type="text"
                 value={age}
                 onChange={(e) => setAge(e.target.value)}
-                placeholder="Ej: 2 años, Cachorro"
+                placeholder="Ej: Adulto"
                 className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold"
               />
             </div>
+            <div>
+              <label className="font-bold text-slate-700 block mb-1 text-[10px] uppercase">
+                ESTADO:
+              </label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold text-emerald-800"
+              >
+                <option value="activo">Activo</option>
+                <option value="observacion">Observación</option>
+                <option value="cuarentena">Cuarentena</option>
+              </select>
+            </div>
           </div>
 
-          {/* 5. Raza y Color */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="font-bold text-slate-700 block mb-1 text-[10px] uppercase">
@@ -416,45 +479,10 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
             </div>
           </div>
 
-          {/* 6. Sección de Planilla según Especie */}
-          <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
-            <label className="font-black text-slate-800 block mb-1 text-[11px] uppercase">
-              SECCIÓN DE PLANILLA DE INGRESO:
-            </label>
-            {species === "perro" ? (
-              <select
-                value={sectionCanino}
-                onChange={(e) => setSectionCanino(e.target.value)}
-                className="w-full p-2.5 bg-white border border-slate-300 rounded-xl font-bold"
-              >
-                <option value="TRIAJE">Triaje (Ingreso Inicial)</option>
-                <option value="UCE">UCE (Unidad de Cuidados Especiales)</option>
-                <option value="CDV">Distemper CDV (Aislamiento)</option>
-                <option value="LIMPIEZAS">Limpiezas / Curaciones</option>
-                <option value="BAÑOS">Baños Medicados</option>
-                <option value="NEBULIZACIONES">Nebulizaciones Respiratorias</option>
-                <option value="NOCHE">Tratamiento Nocturno</option>
-                <option value="BRAVECTO">Desparasitación Bravecto</option>
-                <option value="ADOPCIONES">Pabellón de Adopciones</option>
-              </select>
-            ) : (
-              <select
-                value={sectionGatera}
-                onChange={(e) => setSectionGatera(e.target.value)}
-                className="w-full p-2.5 bg-white border border-slate-300 rounded-xl font-bold"
-              >
-                <option value="CUARENTENA">Cuarentena Felina</option>
-                <option value="TTO_OCTUBRE">Con Tratamiento Médico Activo</option>
-                <option value="MATERNAS">Maternidades Felinas</option>
-                <option value="PATIOS">Patios de Adopción Gatera</option>
-              </select>
-            )}
-          </div>
-
-          {/* 7. Alertas de Bioseguridad */}
+          {/* 6. Protocolo de Bioseguridad */}
           <div className="p-3.5 bg-amber-50/70 border border-amber-200 rounded-2xl space-y-2">
             <span className="font-black text-amber-950 block text-[11px] uppercase tracking-wider flex items-center gap-1.5">
-              <ShieldAlert className="w-4 h-4 text-amber-600" /> Protocolo de Bioseguridad y Manejo:
+              <ShieldAlert className="w-4 h-4 text-amber-600" /> Bioseguridad & Manejo Cauteloso:
             </span>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {species === "perro" && (
@@ -465,7 +493,7 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
                     onChange={(e) => setIsCDV(e.target.checked)}
                     className="w-4 h-4 rounded text-red-600 focus:ring-red-500"
                   />
-                  <span className="text-[11px] text-red-700">☣️ Distemper (+)</span>
+                  <span className="text-[11px] text-red-700">☣️ Distemper CDV (+)</span>
                 </label>
               )}
               <label className="flex items-center gap-2 p-2 bg-white rounded-xl border border-amber-200 cursor-pointer font-bold text-slate-800">
@@ -489,17 +517,36 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
             </div>
           </div>
 
+          {/* 7. DESPARASITACIÓN BRAVECTO (SOLO PARA CANINOS) */}
+          {species === "perro" && (
+            <div className="p-3.5 bg-amber-50 border-2 border-amber-300 rounded-2xl space-y-1.5 animate-in fade-in">
+              <label className="font-black text-amber-950 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
+                <Pill className="w-4 h-4 text-amber-600" /> Desparasitación Bravecto (Exclusivo Caninos):
+              </label>
+              <input
+                type="text"
+                value={bravectoCanino}
+                onChange={(e) => setBravectoCanino(e.target.value)}
+                placeholder="Ej: 1 dosis (Bravecto 20-40kg) o Al Día"
+                className="w-full p-2.5 bg-white border border-amber-300 rounded-xl font-bold text-amber-950 focus:ring-2 focus:ring-amber-500"
+              />
+              <span className="text-[10px] text-amber-700 block font-medium">
+                * Bravecto tiene vigencia de 90 días y solo aplica para la población canina.
+              </span>
+            </div>
+          )}
+
           {/* 8. Tratamiento Inicial / Kardex Opcional */}
           <div className="p-3.5 bg-indigo-50/70 border border-indigo-200 rounded-2xl space-y-2">
             <div className="flex items-center justify-between">
               <span className="font-black text-indigo-950 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
-                <Pill className="w-4 h-4 text-indigo-600" /> ¿Tiene Medicación Prescrita?
+                <Pill className="w-4 h-4 text-indigo-600" /> ¿Tiene Medicación Prescrita al Ingreso?
               </span>
               <button
                 type="button"
                 onClick={() => setHasTreatment(!hasTreatment)}
                 className={`px-3 py-1 rounded-xl font-bold text-[11px] transition-all ${
-                  hasTreatment ? "bg-indigo-600 text-white" : "bg-slate-200 text-slate-700"
+                  hasTreatment ? "bg-indigo-600 text-white shadow-sm" : "bg-slate-200 text-slate-700"
                 }`}
               >
                 {hasTreatment ? "SÍ (Prescribir)" : "NO"}
@@ -557,37 +604,7 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
             )}
           </div>
 
-          {/* 9. Desparasitación / Bravecto y Observaciones */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="font-bold text-slate-700 block mb-1 text-[10px] uppercase">
-                DESPARASITANTE / BRAVECTO:
-              </label>
-              <input
-                type="text"
-                value={bravecto}
-                onChange={(e) => setBravecto(e.target.value)}
-                placeholder="Ej: Bravecto 20-40kg, Al Día"
-                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-medium"
-              />
-            </div>
-            <div>
-              <label className="font-bold text-slate-700 block mb-1 text-[10px] uppercase">
-                ESTADO GENERAL:
-              </label>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold"
-              >
-                <option value="activo">Activo / Estable</option>
-                <option value="cuarentena">Cuarentena Preventiva</option>
-                <option value="observacion">Bajo Observación</option>
-                <option value="critico">Cuidados Especiales</option>
-              </select>
-            </div>
-          </div>
-
+          {/* 9. Observaciones */}
           <div>
             <label className="font-bold text-slate-700 block mb-1 text-[10px] uppercase">
               OBSERVACIONES CLÍNICAS / DIETA / NOTAS DE INGRESO:
@@ -596,31 +613,43 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
               rows={2}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Ej: Rescatado en Comuna 13. Presenta baja condición corporal, dieta blanda requerida..."
+              placeholder="Ej: Rescatado en Comuna 13. Presenta baja condición corporal, dieta blanda..."
               className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-medium"
             />
           </div>
 
-          {/* Botones de Acción */}
-          <div className="flex gap-2.5 pt-2 shrink-0">
+          {/* Botón interior de retorno rápido arriba si el usuario bajó */}
+          <div className="pt-1 text-center">
             <button
               type="button"
-              onClick={onClose}
-              disabled={isSubmitting}
-              className="w-1/3 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl text-xs transition-all"
+              onClick={scrollToTop}
+              className="text-[11px] font-bold text-slate-500 hover:text-indigo-600 inline-flex items-center gap-1 p-1 rounded-lg"
             >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="w-2/3 py-3.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black rounded-2xl text-xs shadow-lg shadow-emerald-600/25 flex items-center justify-center gap-2 transition-all"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>{isSubmitting ? "GUARDANDO..." : "GUARDAR Y SUMAR A LA BASE DE DATOS"}</span>
+              <ArrowUp className="w-3.5 h-3.5" /> Volver al inicio del formulario
             </button>
           </div>
-        </form>
+        </div>
+
+        {/* Barra de Acciones FIJA / STICKY en la parte inferior */}
+        <div className="sticky bottom-0 bg-white/95 backdrop-blur-md p-3.5 sm:p-4 border-t border-slate-200 shadow-xl z-20 shrink-0 flex gap-2.5">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSubmitting}
+            className="w-1/3 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl text-xs transition-all"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={isSubmitting}
+            className="w-2/3 py-3.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black rounded-2xl text-xs shadow-lg shadow-emerald-600/25 flex items-center justify-center gap-2 transition-all"
+          >
+            <CheckCircle2 className="w-4 h-4" />
+            <span>{isSubmitting ? "GUARDANDO..." : "GUARDAR Y SUMAR AL CENSO"}</span>
+          </button>
+        </div>
       </div>
     </div>
   );
