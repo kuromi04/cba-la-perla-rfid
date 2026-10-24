@@ -396,7 +396,7 @@ export const KardexTab: React.FC<KardexTabProps> = ({ initialChip = "", currentU
 
       {/* Modal Nuevo Tratamiento */}
       {isNewOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b pb-3">
               <h3 className="font-black text-slate-900 text-lg">Prescribir Programación de Medicamento</h3>

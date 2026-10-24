@@ -362,7 +362,7 @@ export const BatchScannerModal: React.FC<BatchScannerModalProps> = ({
   const withTreatmentCount = matchedItems.filter((i) => i.details?.hasActiveTreatment).length;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto">
       <div className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl p-5 sm:p-6 space-y-4 max-h-[92vh] flex flex-col animate-in zoom-in-95">
         
         {/* Encabezado */}

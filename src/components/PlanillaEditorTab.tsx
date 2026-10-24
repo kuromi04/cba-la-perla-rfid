@@ -905,7 +905,7 @@ export const PlanillaEditorTab: React.FC<PlanillaEditorTabProps> = ({
 
       {/* Modal Edición Gatera */}
       {editingCat && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto animate-in zoom-in-95">
             <div className="flex justify-between items-center border-b pb-3">
               <h3 className="font-black text-slate-900 text-base">Modificar Ficha de Felino (Gatera)</h3>
@@ -1006,7 +1006,7 @@ export const PlanillaEditorTab: React.FC<PlanillaEditorTabProps> = ({
 
       {/* Modal Edición Caninos */}
       {editingRecord && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto animate-in zoom-in-95">
             <div className="flex justify-between items-center border-b pb-3">
               <h3 className="font-black text-slate-900 text-base">Modificar Fila Caninos</h3>
@@ -1101,7 +1101,7 @@ export const PlanillaEditorTab: React.FC<PlanillaEditorTabProps> = ({
 
       {/* Modal Nuevo Registro */}
       {isNewModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto animate-in zoom-in-95">
             <div className="flex justify-between items-center border-b pb-3">
               <h3 className="font-black text-slate-900 text-base">Alimentar Nuevo Registro</h3>
@@ -1201,7 +1201,7 @@ export const PlanillaEditorTab: React.FC<PlanillaEditorTabProps> = ({
 
       {/* Modal Nuevo Felino en Gatera */}
       {isNewCatModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto animate-in zoom-in-95">
             <div className="flex justify-between items-center border-b pb-3">
               <h3 className="font-black text-slate-900 text-base flex items-center gap-2">

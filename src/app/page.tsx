@@ -306,7 +306,7 @@ export default function Home() {
         <button
           type="button"
           onClick={scrollToTop}
-          className="fixed bottom-20 right-4 sm:right-[max(1rem,calc(50%-270px))] z-50 p-3 bg-slate-900/90 hover:bg-slate-900 text-white rounded-full shadow-2xl border-2 border-emerald-500/80 active:scale-90 transition-all duration-300 flex items-center justify-center gap-1.5 text-xs font-black backdrop-blur-md animate-in fade-in zoom-in-90"
+          className="fixed bottom-20 right-4 sm:right-[max(1rem,calc(50%-270px))] z-30 p-3 bg-slate-900/90 hover:bg-slate-900 text-white rounded-full shadow-2xl border-2 border-emerald-500/80 active:scale-90 transition-all duration-300 flex items-center justify-center gap-1.5 text-xs font-black backdrop-blur-md animate-in fade-in zoom-in-90"
           title="Volver al inicio"
           aria-label="Volver arriba"
         >
@@ -331,7 +331,7 @@ export default function Home() {
       />
 
       {/* 3. Barra de Navegación Inferior Móvil */}
-      <nav className="fixed bottom-0 left-0 right-0 max-w-xl mx-auto bg-white/95 backdrop-blur-md border-t border-slate-200 px-3 py-2 flex justify-around items-center z-50 shadow-lg">
+      <nav className="fixed bottom-0 left-0 right-0 max-w-xl mx-auto bg-white/95 backdrop-blur-md border-t border-slate-200 px-3 py-2 flex justify-around items-center z-30 shadow-lg">
         <button
           type="button"
           onClick={() => setActiveTab("scanner")}

@@ -76,7 +76,7 @@ export const CanilCardModal: React.FC<CanilCardModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto">
       {/* Botones Flotantes Superiores en Pantalla (Ocultos al Imprimir) */}
       <div className="w-full max-w-3xl bg-white rounded-3xl shadow-2xl p-5 sm:p-6 space-y-4 max-h-[95vh] flex flex-col animate-in zoom-in-95">
         

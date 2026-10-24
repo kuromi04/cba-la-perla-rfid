@@ -100,11 +100,6 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
       scrollToTop();
       return;
     }
-    if (!name.trim()) {
-      setErrorMessage("Por favor ingresa el nombre o identificación del animal.");
-      scrollToTop();
-      return;
-    }
     if (!location.trim()) {
       setErrorMessage("Por favor ingresa el Nº Canil o Ubicación (Columna B de la Hoja de Censo).");
       scrollToTop();
@@ -115,7 +110,7 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
 
     try {
       const shortChip = cleanChip.length > 7 ? cleanChip.slice(-7) : cleanChip;
-      const formattedName = name.trim().toUpperCase();
+      const formattedName = name.trim() ? name.trim().toUpperCase() : "S/N";
       const formattedLocation = location.trim().toUpperCase(); // Columna B Censo
       const formattedBreed = breed.trim().toUpperCase() || (species === "gato" ? "COMÚN" : "MESTIZO");
       const formattedColor = color.trim().toUpperCase() || "ESTÁNDAR";
@@ -254,8 +249,8 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 backdrop-blur-sm p-2.5 sm:p-4 flex items-center justify-center overscroll-contain">
-      <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 my-auto flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm p-2 sm:p-4 flex items-center justify-center overscroll-contain">
+      <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 my-auto flex flex-col max-h-[92dvh] sm:max-h-[90vh]">
         
         {/* Cabecera Fija del Modal */}
         <div className="p-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800 shrink-0">
@@ -384,14 +379,13 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="font-black text-slate-800 block mb-1 text-[11px]">
-                NOMBRE DEL ANIMAL: <span className="text-red-500">*</span>
+                NOMBRE DEL ANIMAL: <span className="text-slate-400 font-normal text-[10px]">(Opcional - S/N)</span>
               </label>
               <input
                 type="text"
-                required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Ej: Max, Luna, Pelusa..."
+                placeholder="Ej: Max, Luna, o dejar vacío..."
                 className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold uppercase focus:bg-white"
               />
             </div>
@@ -631,12 +625,12 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
         </div>
 
         {/* Barra de Acciones FIJA / STICKY en la parte inferior */}
-        <div className="sticky bottom-0 bg-white/95 backdrop-blur-md p-3.5 sm:p-4 border-t border-slate-200 shadow-xl z-20 shrink-0 flex gap-2.5">
+        <div className="sticky bottom-0 bg-white/95 backdrop-blur-md p-3.5 sm:p-4 border-t border-slate-200 shadow-2xl z-30 shrink-0 flex gap-2.5">
           <button
             type="button"
             onClick={onClose}
             disabled={isSubmitting}
-            className="w-1/3 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl text-xs transition-all"
+            className="w-1/3 py-3.5 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 font-bold rounded-2xl text-xs transition-all"
           >
             Cancelar
           </button>
