@@ -23,7 +23,7 @@ interface RegisterNewAnimalModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialMicrochip: string;
-  defaultArea?: "caninos" | "gatera" | "ambas";
+  defaultArea?: "gatera";
   currentUser?: StaffMember | null;
   onAnimalRegistered: (animal: Animal) => void;
 }

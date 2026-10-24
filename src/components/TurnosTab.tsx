@@ -30,7 +30,17 @@ import {
   UserCheck,
   Award,
   RefreshCw,
+  Users,
+  Activity,
+  Wifi,
 } from "lucide-react";
+import {
+  ConnectedStaff,
+  getConnectedStaff,
+  fetchShiftTasksFromSupabase,
+  syncShiftTaskToSupabase,
+  syncAllTasksToSupabase,
+} from "@/lib/supabase";
 
 interface TurnosTabProps {
   currentStaffName?: string;
@@ -41,56 +51,98 @@ interface TurnosTabProps {
 export const TurnosTab: React.FC<TurnosTabProps> = ({
   currentStaffName = "",
   currentRole = "veterinario",
-  currentArea = "gatera",
 }) => {
-  const isExclusiveGatera = true;
-  const isExclusiveCaninos = false;
-  const defaultArea = "gatera";
-
   const [tasks, setTasks] = useState<ShiftTask[]>([]);
-  const [turnosArea, setTurnosArea] = useState<"caninos" | "gatera">("gatera");
   const [activeShift, setActiveShift] = useState<"todos" | "mañana" | "tarde" | "noche">("todos");
   const [activeLabor, setActiveLabor] = useState<string>("todas");
   const [staffFilter, setStaffFilter] = useState<string>(currentStaffName || "todos");
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
+  const [connectedStaff, setConnectedStaff] = useState<ConnectedStaff[]>([]);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isResetting, setIsResetting] = useState(false);
+  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
 
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [animalToAssign, setAnimalToAssign] = useState<SelectedAnimalInfo | null>(null);
 
-  const loadTasks = async () => {
-    const list = await generateTodayShiftTasks();
-    setTasks(list);
+  const loadTasks = async (silent: boolean = false) => {
+    if (!silent) setIsSyncingCloud(true);
+    let list = await generateTodayShiftTasks();
+
+    // Sincronizar en tiempo real con Supabase
+    if (typeof window !== "undefined" && navigator.onLine) {
+      try {
+        const cloudTasks = await fetchShiftTasksFromSupabase();
+        if (cloudTasks && cloudTasks.length > 0) {
+          // Unir estados de la nube a la base de datos local
+          for (const ct of cloudTasks) {
+            const local = list.find(
+              (lt) => lt.microchip === ct.microchip && lt.medication === ct.medication
+            );
+            if (local && local.id) {
+              if (local.isCompleted !== ct.isCompleted) {
+                await db.shiftTasks.update(local.id, {
+                  isCompleted: ct.isCompleted,
+                  completedAt: ct.completedAt,
+                  completedBy: ct.completedBy,
+                  dosisAplicadas: ct.dosisAplicadas,
+                  dosisFaltantes: ct.dosisFaltantes,
+                });
+                local.isCompleted = ct.isCompleted;
+                local.completedAt = ct.completedAt;
+                local.completedBy = ct.completedBy;
+                local.dosisAplicadas = ct.dosisAplicadas;
+                local.dosisFaltantes = ct.dosisFaltantes;
+              }
+            }
+          }
+        } else if (list.length > 0) {
+          // Primera subida de tareas locales a Supabase
+          syncAllTasksToSupabase(list).catch(console.warn);
+        }
+      } catch (err) {
+        console.warn("Supabase tasks sync non-blocking error:", err);
+      }
+    }
+
+    setTasks([...list]);
+    if (!silent) setIsSyncingCloud(false);
   };
 
-  const loadStaff = async () => {
+  const loadStaffAndPresence = async () => {
     const list = await getAllStaff();
     setStaffList(list);
+
+    if (typeof window !== "undefined" && navigator.onLine) {
+      try {
+        const connected = await getConnectedStaff();
+        setConnectedStaff(connected);
+      } catch (err) {
+        console.warn("Connected staff fetch error:", err);
+      }
+    }
   };
 
   useEffect(() => {
     loadTasks();
-    loadStaff();
-  }, []);
+    loadStaffAndPresence();
 
-  // Mantener sincronizada el área exclusiva del usuario activo
-  useEffect(() => {
-    if (isExclusiveGatera) {
-      setTurnosArea("gatera");
-    } else if (isExclusiveCaninos) {
-      setTurnosArea("caninos");
-    }
-  }, [currentArea, isExclusiveGatera, isExclusiveCaninos]);
+    // Polling en segundo plano cada 12 segundos para supervisión en vivo sin recargar
+    const timer = setInterval(() => {
+      loadTasks(true);
+      loadStaffAndPresence();
+    }, 12000);
+
+    return () => clearInterval(timer);
+  }, []);
 
   const handleToggleTask = async (task: ShiftTask) => {
     if (!task.id) return;
     const newStatus = !task.isCompleted;
-    const worker = currentStaffName || "Personal CBA";
+    const worker = currentStaffName || "Personal Gatera";
 
     let doseMsg = "";
     if (newStatus) {
-      // Si tiene kardexId vinculado o es medicación/bravecto, descontamos la dosis
       if (task.kardexId) {
         const res = await applyDoseToTreatment(task.kardexId, worker, currentRole);
         if (res) {
@@ -107,13 +159,27 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
       }
     }
 
-    await db.shiftTasks.update(task.id, {
+    const updatedTaskData = {
       isCompleted: newStatus,
       completedAt: newStatus ? new Date().toISOString() : undefined,
       completedBy: newStatus ? worker : undefined,
-      dosisAplicadas: newStatus ? (task.dosisAplicadas || 0) + 1 : Math.max(0, (task.dosisAplicadas || 1) - 1),
-      dosisFaltantes: newStatus ? Math.max(0, (task.dosisFaltantes || 1) - 1) : (task.dosisFaltantes || 0) + 1,
-    });
+      dosisAplicadas: newStatus
+        ? (task.dosisAplicadas || 0) + 1
+        : Math.max(0, (task.dosisAplicadas || 1) - 1),
+      dosisFaltantes: newStatus
+        ? Math.max(0, (task.dosisFaltantes || 1) - 1)
+        : (task.dosisFaltantes || 0) + 1,
+    };
+
+    await db.shiftTasks.update(task.id, updatedTaskData);
+
+    // Sincronizar actualización inmediatamente a Supabase
+    if (typeof window !== "undefined" && navigator.onLine) {
+      syncShiftTaskToSupabase({
+        ...task,
+        ...updatedTaskData,
+      }).catch(console.warn);
+    }
 
     if (newStatus && typeof window !== "undefined" && "vibrate" in navigator) {
       navigator.vibrate([100, 50, 100]);
@@ -125,80 +191,183 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
         : `Labor marcada como pendiente`
     );
     setTimeout(() => setFeedback(null), 3500);
-    loadTasks();
+    loadTasks(true);
   };
 
   const handleResetData = async () => {
-    if (!window.confirm("¿Deseas sincronizar y garantizar que la base de datos tenga únicamente los datos reales de los archivos Excel?")) {
+    if (
+      !window.confirm(
+        "¿Deseas restablecer y sincronizar el censo de Gatera garantizando 100% de datos oficiales?"
+      )
+    ) {
       return;
     }
     setIsResetting(true);
     await resetDatabaseWithRealData();
     await loadTasks();
     setIsResetting(false);
-    setFeedback("🧹 Base de datos restablecida con 100% datos reales de los archivos.");
+    setFeedback("🧹 Censo y tareas de Gatera restablecidas exitosamente.");
     setTimeout(() => setFeedback(null), 3000);
   };
 
   const handleReassign = async (taskId?: number, newAssignee?: string) => {
     if (!taskId || !newAssignee) return;
     await db.shiftTasks.update(taskId, { assignedTo: newAssignee });
+    const targetTask = tasks.find((t) => t.id === taskId);
+    if (targetTask && typeof window !== "undefined" && navigator.onLine) {
+      syncShiftTaskToSupabase({ ...targetTask, assignedTo: newAssignee }).catch(console.warn);
+    }
     setFeedback(`👨‍⚕️ Reasignado a: ${newAssignee}`);
     setTimeout(() => setFeedback(null), 2500);
-    loadTasks();
+    loadTasks(true);
   };
 
   const handlePrintDailyReport = () => {
     window.print();
   };
 
+  // Filtrado 100% exclusivo de GATERA
   const filteredTasks = tasks.filter((t) => {
-    const matchArea = t.area === turnosArea;
     const matchShift = activeShift === "todos" || t.shift === activeShift;
     const matchLabor = activeLabor === "todas" || t.laborType === activeLabor;
     const matchStaff =
       staffFilter === "todos" ||
-      (t.assignedTo && t.assignedTo.toLowerCase().includes(staffFilter.toLowerCase()));
+      (t.assignedTo && t.assignedTo.toLowerCase().includes(staffFilter.toLowerCase())) ||
+      (t.completedBy && t.completedBy.toLowerCase().includes(staffFilter.toLowerCase()));
 
-    return matchArea && matchShift && matchLabor && matchStaff;
+    return matchShift && matchLabor && matchStaff;
   });
 
-  const areaTasks = tasks.filter((t) => t.area === turnosArea);
-  const completedCount = areaTasks.filter((t) => t.isCompleted).length;
-  const progressPercent = areaTasks.length > 0 ? Math.round((completedCount / areaTasks.length) * 100) : 0;
+  const completedCount = tasks.filter((t) => t.isCompleted).length;
+  const progressPercent = tasks.length > 0 ? Math.round((completedCount / tasks.length) * 100) : 0;
 
   return (
     <div className="space-y-4 pb-24">
       {/* Banner Superior Exclusivo GATERA */}
       <div className="p-3.5 rounded-2xl border flex items-center justify-between text-xs font-black shadow-sm bg-purple-50 border-purple-200 text-purple-900">
         <div className="flex items-center gap-2">
-          <span className="text-base">🐱</span>
+          <span className="text-xl">🐱</span>
           <div>
-            <span className="block leading-tight">
-              MÓDULO OFICIAL DE TURNOS: GATERA (FELINOS)
+            <span className="block leading-tight text-sm">
+              MÓDULO OFICIAL DE TURNOS: GATERA (461 FELINOS)
             </span>
-            <span className="text-[10px] font-medium text-slate-500">
-              Personal asignado exclusivamente a GATERA
+            <span className="text-[10px] font-medium text-slate-600 flex items-center gap-1 mt-0.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-purple-700" />
+              Centro de Bienestar Animal La Perla • Supervisión Clínica Exclusiva
             </span>
           </div>
         </div>
-        <span className="text-[10px] font-bold px-2.5 py-1 rounded-xl bg-purple-200 text-purple-900">
-          {areaTasks.length} Labores Activas
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] font-bold px-2.5 py-1 rounded-xl bg-purple-200 text-purple-900 flex items-center gap-1">
+            <Activity className="w-3 h-3 text-purple-700 animate-pulse" />
+            {tasks.length} Labores Activas
+          </span>
+        </div>
       </div>
 
-      {/* 1. Header con Progreso y Opciones de Despacho */}
+      {/* 1. PANEL EN VIVO: PERSONAL CONECTADO Y SUPERVISIÓN DE CHECKLISTS */}
+      <div className="bg-white rounded-3xl p-4 shadow-sm border border-slate-200 space-y-3">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-emerald-100 rounded-xl text-emerald-800">
+              <Users className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="font-black text-slate-900 text-xs flex items-center gap-1.5">
+                <span>PERSONAL CONECTADO EN GATERA</span>
+                <span className="flex h-2 w-2 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+              </h3>
+              <p className="text-[10px] text-slate-500">
+                Supervisión en tiempo real de auxiliares y operarios en campo
+              </p>
+            </div>
+          </div>
+
+          <span className="text-[11px] font-black px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200">
+            {connectedStaff.length} en línea
+          </span>
+        </div>
+
+        {connectedStaff.length === 0 ? (
+          <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 text-center text-xs space-y-1">
+            <p className="font-bold text-slate-700">No hay otros empleados con sesión activa en este instante.</p>
+            <p className="text-[11px] text-slate-500">
+              💡 Envía los <strong>Links Mágicos por WhatsApp</strong> para que los auxiliares inicien turno desde su teléfono móvil y supervises su avance en vivo.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {connectedStaff.map((st) => {
+              const workerTasks = tasks.filter(
+                (t) =>
+                  t.assignedTo?.toLowerCase().includes(st.staff_name.toLowerCase()) ||
+                  t.completedBy?.toLowerCase().includes(st.staff_name.toLowerCase())
+              );
+              const workerDone = workerTasks.filter((t) => t.isCompleted).length;
+              const isSelected = staffFilter.toLowerCase() === st.staff_name.toLowerCase();
+
+              return (
+                <div
+                  key={st.staff_id}
+                  onClick={() => setStaffFilter(isSelected ? "todos" : st.staff_name)}
+                  className={`p-2.5 rounded-2xl border cursor-pointer transition-all flex items-center justify-between text-xs ${
+                    isSelected
+                      ? "bg-purple-50 border-purple-400 shadow-sm ring-2 ring-purple-300"
+                      : "bg-slate-50 border-slate-200 hover:bg-slate-100"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <div className="relative">
+                      <div className="w-8 h-8 rounded-xl bg-slate-800 text-white flex items-center justify-center font-black text-xs">
+                        {st.role === "veterinario"
+                          ? "DR"
+                          : st.role === "auxiliar"
+                          ? "AUX"
+                          : st.role === "operario"
+                          ? "OP"
+                          : "ADM"}
+                      </div>
+                      <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white"></span>
+                    </div>
+
+                    <div>
+                      <span className="font-black text-slate-900 block leading-tight">
+                        {st.staff_name}
+                      </span>
+                      <span className="text-[10px] text-slate-500 capitalize">
+                        {st.role} • {st.isOnlineNow ? "Activo ahora" : "Reciente"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <span className="font-mono text-xs font-black text-purple-900 block">
+                      {workerDone}/{workerTasks.length}
+                    </span>
+                    <span className="text-[9px] text-slate-500 font-bold">
+                      {isSelected ? "Filtro activo" : "Ver labores"}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* 2. Header con Progreso de Gatera y Opciones de Despacho */}
       <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-200 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
-              <Clock
-                className={`w-6 h-6 ${turnosArea === "gatera" ? "text-purple-600" : "text-emerald-600"}`}
-              />
-              {turnosArea === "gatera" ? "Despacho GATERA" : "Despacho CANINOS"}
+              <Clock className="w-6 h-6 text-purple-600" />
+              <span>Despacho de Turno GATERA</span>
             </h2>
             <p className="text-xs text-slate-500">
-              Checklist y cumplimiento de tareas prescritas por el Médico Veterinario.
+              Checklist y cumplimiento de tareas clínicas prescritas por Médicos Veterinarios.
             </p>
           </div>
 
@@ -209,10 +378,10 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
                 onClick={handleResetData}
                 disabled={isResetting}
                 className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1 border border-slate-300 transition-all"
-                title="Limpiar datos demo y recargar 100% de archivos Excel"
+                title="Limpiar datos demo y sincronizar 100% de archivos oficiales"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${isResetting ? "animate-spin text-indigo-600" : ""}`} />
-                <span className="hidden sm:inline">Limpiar Muestras</span>
+                <RefreshCw className={`w-3.5 h-3.5 ${isResetting ? "animate-spin text-purple-600" : ""}`} />
+                <span className="hidden sm:inline">Restablecer Censo</span>
               </button>
             )}
 
@@ -237,7 +406,7 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
 
           <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-2xl">
             <span className="text-[10px] font-black uppercase text-amber-700 block">Faltantes</span>
-            <span className="text-lg font-black text-amber-900">{areaTasks.length - completedCount}</span>
+            <span className="text-lg font-black text-amber-900">{tasks.length - completedCount}</span>
             <span className="text-[9px] text-amber-600 block">pendientes turno</span>
           </div>
 
@@ -256,45 +425,24 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
               setAnimalToAssign(null);
               setIsAssignModalOpen(true);
             }}
-            className="w-full py-3.5 px-4 bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-700 hover:from-emerald-500 hover:to-indigo-600 text-white rounded-2xl text-xs font-black flex items-center justify-center gap-2 shadow-lg shadow-emerald-700/25 active:scale-95 transition-all"
+            className="w-full py-3.5 px-4 bg-gradient-to-r from-purple-700 via-indigo-700 to-emerald-700 hover:from-purple-600 hover:to-emerald-600 text-white rounded-2xl text-xs font-black flex items-center justify-center gap-2 shadow-lg shadow-purple-700/25 active:scale-95 transition-all"
           >
-            <PlusCircle className="w-5 h-5 text-emerald-200" />
-            <span>🐾 ASIGNAR ANIMAL A OPERARIO / AUXILIAR</span>
+            <PlusCircle className="w-5 h-5 text-purple-200" />
+            <span>🐾 ASIGNAR ANIMAL DE GATERA A OPERARIO / AUXILIAR</span>
           </button>
         )}
 
-        {/* Mensaje de Operario en Sesión Mágica si aplica */}
-        {currentStaffName && (
-          <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-2xl flex items-center justify-between text-xs text-indigo-900 font-bold">
-            <span className="flex items-center gap-2">
-              <User className="w-4 h-4 text-indigo-600" /> Sesión Mágica Activa: {currentStaffName}
-            </span>
-            <button
-              onClick={() => setStaffFilter(currentStaffName)}
-              className="px-2.5 py-1 bg-indigo-600 text-white rounded-lg text-[10px]"
-            >
-              Ver Solo Mis Labores
-            </button>
-          </div>
-        )}
-
-        {/* Barra de Progreso del Área Activa */}
+        {/* Barra de Progreso de Gatera */}
         <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
           <div className="flex items-center justify-between text-xs font-bold text-slate-700">
-            <span>Cumplimiento {turnosArea.toUpperCase()}:</span>
-            <span
-              className={`font-mono text-sm ${
-                turnosArea === "gatera" ? "text-purple-700 font-black" : "text-emerald-700 font-black"
-              }`}
-            >
-              {completedCount} / {areaTasks.length} labores ({progressPercent}%)
+            <span>Cumplimiento Total GATERA:</span>
+            <span className="font-mono text-sm text-purple-700 font-black">
+              {completedCount} / {tasks.length} labores ({progressPercent}%)
             </span>
           </div>
           <div className="w-full bg-slate-200 rounded-full h-3.5 overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all duration-500 shadow-sm ${
-                turnosArea === "gatera" ? "bg-purple-600" : "bg-emerald-500"
-              }`}
+              className="h-full rounded-full transition-all duration-500 shadow-sm bg-purple-600"
               style={{ width: `${progressPercent}%` }}
             />
           </div>
@@ -316,7 +464,7 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
               activeShift === "todos" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"
             }`}
           >
-            Todos ({areaTasks.length})
+            Todos ({tasks.length})
           </button>
           <button
             type="button"
@@ -325,7 +473,7 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
               activeShift === "mañana" ? "bg-white text-amber-700 shadow-sm" : "text-slate-500"
             }`}
           >
-            ☀️ Mañana ({areaTasks.filter((t) => t.shift === "mañana").length})
+            ☀️ Mañana ({tasks.filter((t) => t.shift === "mañana").length})
           </button>
           <button
             type="button"
@@ -334,7 +482,7 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
               activeShift === "tarde" ? "bg-white text-orange-700 shadow-sm" : "text-slate-500"
             }`}
           >
-            🌤️ Tarde ({areaTasks.filter((t) => t.shift === "tarde").length})
+            🌤️ Tarde ({tasks.filter((t) => t.shift === "tarde").length})
           </button>
           <button
             type="button"
@@ -343,7 +491,7 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
               activeShift === "noche" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500"
             }`}
           >
-            🌙 Noche ({areaTasks.filter((t) => t.shift === "noche").length})
+            🌙 Noche ({tasks.filter((t) => t.shift === "noche").length})
           </button>
         </div>
 
@@ -365,7 +513,7 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
         </div>
       </div>
 
-      {/* 2. Lista de Tareas con Botón Táctil Gigante (56px) */}
+      {/* 3. Lista de Tareas con Botón Táctil Gigante (56px) */}
       <div className="space-y-3">
         {filteredTasks.length === 0 ? (
           <div className="p-8 text-center bg-white rounded-3xl border border-slate-200 text-slate-400 text-xs">
@@ -383,13 +531,7 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
             >
               <div className="space-y-1.5 flex-1">
                 <div className="flex items-center gap-2">
-                  <span
-                    className={`px-2.5 py-0.5 rounded-lg text-xs font-black flex items-center gap-1 ${
-                      task.area === "gatera"
-                        ? "bg-purple-100 text-purple-900 border border-purple-200"
-                        : "bg-emerald-100 text-emerald-900 border border-emerald-200"
-                    }`}
-                  >
+                  <span className="px-2.5 py-0.5 rounded-lg text-xs font-black flex items-center gap-1 bg-purple-100 text-purple-900 border border-purple-200">
                     <MapPin className="w-3 h-3" /> {task.location}
                   </span>
                   <span className="font-bold text-slate-900 text-sm">{task.animalName}</span>
@@ -420,10 +562,10 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
                   )}
                 </div>
 
-                {/* Reasignación por el Veterinario */}
+                {/* Reasignación por el Veterinario y Auditoría */}
                 <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px] text-slate-500">
                   <div className="flex items-center gap-1.5">
-                    <User className="w-3.5 h-3.5 text-indigo-600" />
+                    <User className="w-3.5 h-3.5 text-purple-600" />
                     <span>Asignado:</span>
                     {currentRole === "veterinario" || currentRole === "admin" ? (
                       <select
@@ -445,7 +587,7 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
 
                   {task.isCompleted && task.completedAt && (
                     <div className="text-[10px] text-emerald-700 font-bold flex items-center gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Administrado a las{" "}
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Administrado por {task.completedBy || "Personal"} a las{" "}
                       {new Date(task.completedAt).toLocaleTimeString([], {
                         hour: "2-digit",
                         minute: "2-digit",
@@ -477,10 +619,10 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
         isOpen={isAssignModalOpen}
         onClose={() => setIsAssignModalOpen(false)}
         initialAnimal={animalToAssign}
-        userArea={turnosArea}
+        userArea="gatera"
         onSuccess={() => {
           loadTasks();
-          setFeedback("🐾 Animal asignado con éxito al turno");
+          setFeedback("🐾 Felino asignado con éxito al turno de Gatera");
           setTimeout(() => setFeedback(null), 3000);
         }}
       />

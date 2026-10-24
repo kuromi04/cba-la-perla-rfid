@@ -433,10 +433,10 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
         isOpen={isRegisterOpen}
         onClose={() => setIsRegisterOpen(false)}
         initialMicrochip=""
-        defaultArea={currentUser?.area || "ambas"}
+        defaultArea="gatera"
         currentUser={currentUser}
         onAnimalRegistered={(animal) => {
-          setSyncMessage(`✨ ¡${animal.name} (${animal.species === "gato" ? "Felino" : "Canino"}) registrado y censado exitosamente en ${animal.location}!`);
+          setSyncMessage(`✨ ¡${animal.name} (Felino) registrado y censado exitosamente en ${animal.location}!`);
           loadData();
           setTimeout(() => setSyncMessage(null), 4000);
         }}

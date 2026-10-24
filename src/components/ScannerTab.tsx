@@ -981,14 +981,14 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
             microchip: currentAnimal.microchip,
             name: currentAnimal.name,
             location: currentAnimal.location,
-            species: currentAnimal.species === "gato" ? "gato" : "perro",
+            species: "gato",
             isFeral: currentAnimal.isFeral,
             medication: shelterEntries[0]?.medicacion,
             notes: shelterEntries[0]?.pendientes,
           }}
-          userArea={currentUser?.area || (currentAnimal.species === "gato" ? "gatera" : "caninos")}
+          userArea="gatera"
           onSuccess={(task) => {
-            setFeedbackMessage(`🐾 ${currentAnimal.name} asignado a ${task.assignedTo} para turno ${task.shift}`);
+            setFeedbackMessage(`🐾 ${currentAnimal.name} asignado a ${task.assignedTo || "personal de Gatera"} para turno ${task.shift}`);
             if (typeof window !== "undefined" && "vibrate" in navigator) {
               navigator.vibrate([100, 50, 100]);
             }
@@ -1025,12 +1025,12 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
         isOpen={isRegisterOpen}
         onClose={() => setIsRegisterOpen(false)}
         initialMicrochip={chipInput}
-        defaultArea={preselectedSpecies === "gato" ? "gatera" : "caninos"}
+        defaultArea="gatera"
         currentUser={currentUser}
         onAnimalRegistered={(animal) => {
           setNotFound(false);
           setFeedbackMessage(
-            `✨ ¡${animal.name} (${animal.species === "gato" ? "Felino" : "Canino"}) registrado y censado exitosamente en ${animal.location}!`
+            `✨ ¡${animal.name} (Felino) registrado y censado exitosamente en ${animal.location}!`
           );
           handleSearch(animal.microchip);
         }}

@@ -35,7 +35,7 @@ interface AssignAnimalModalProps {
   onClose: () => void;
   initialAnimal?: SelectedAnimalInfo | null;
   onSuccess?: (task: ShiftTask) => void;
-  userArea?: "caninos" | "gatera" | "ambas";
+  userArea?: "gatera";
 }
 
 export const AssignAnimalModal: React.FC<AssignAnimalModalProps> = ({
@@ -43,7 +43,7 @@ export const AssignAnimalModal: React.FC<AssignAnimalModalProps> = ({
   onClose,
   initialAnimal,
   onSuccess,
-  userArea = "ambas",
+  userArea = "gatera",
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState<SelectedAnimalInfo[]>([]);
@@ -52,7 +52,7 @@ export const AssignAnimalModal: React.FC<AssignAnimalModalProps> = ({
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
   const [assignedStaff, setAssignedStaff] = useState<StaffMember | null>(null);
   const [shift, setShift] = useState<"mañana" | "tarde" | "noche">("mañana");
-  const [laborType, setLaborType] = useState<"medicacion" | "limpieza" | "baño" | "nebulizacion" | "bravecto">("medicacion");
+  const [laborType, setLaborType] = useState<"medicacion" | "limpieza" | "baño" | "nebulizacion" | "desparasitacion">("medicacion");
   const [instruction, setInstruction] = useState("");
   const [customNotes, setCustomNotes] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -82,7 +82,7 @@ export const AssignAnimalModal: React.FC<AssignAnimalModalProps> = ({
     }
   }, [isOpen, initialAnimal, userArea]);
 
-  // Búsqueda en vivo de animales en la base de datos de La Perla (filtrada por área)
+  // Búsqueda en vivo de felinos en la base de datos de GATERA
   useEffect(() => {
     const q = searchTerm.trim().toLowerCase();
     if (q.length < 2) {
@@ -93,59 +93,31 @@ export const AssignAnimalModal: React.FC<AssignAnimalModalProps> = ({
     const timer = setTimeout(async () => {
       const results: SelectedAnimalInfo[] = [];
 
-      // 1. Buscar en Caninos (shelterRecords) solo si no es exclusivo de Gatera
-      if (userArea !== "gatera") {
-        const dogs = await db.shelterRecords
-          .filter((r) =>
-            Boolean(
-              r.microchip.toLowerCase().includes(q) ||
-              r.descripcion.toLowerCase().includes(q) ||
-              r.ubicacion.toLowerCase().includes(q) ||
-              (r.shortChip && r.shortChip.toLowerCase().includes(q))
-            )
+      // Buscar exclusivamente en Felinos (gateraRecords)
+      const cats = await db.gateraRecords
+        .filter((c) =>
+          Boolean(
+            c.microchip.toLowerCase().includes(q) ||
+            c.nombre.toLowerCase().includes(q) ||
+            c.ubicacion.toLowerCase().includes(q) ||
+            c.hc.toLowerCase().includes(q) ||
+            (c.shortChip && c.shortChip.toLowerCase().includes(q))
           )
-          .limit(10)
-          .toArray();
+        )
+        .limit(15)
+        .toArray();
 
-        dogs.forEach((d) => {
-          results.push({
-            microchip: d.microchip,
-            name: d.descripcion,
-            location: d.ubicacion,
-            species: "perro",
-            medication: d.medicacion,
-            notes: d.pendientes ? `Pendiente: ${d.pendientes}` : undefined,
-          });
+      cats.forEach((c) => {
+        results.push({
+          microchip: c.microchip,
+          name: c.nombre,
+          location: c.ubicacion,
+          species: "gato",
+          isFeral: c.isFeral,
+          medication: c.medicacion,
+          notes: `HC: ${c.hc}. ${c.pendientes || ""}`,
         });
-      }
-
-      // 2. Buscar en Felinos (gateraRecords) solo si no es exclusivo de Caninos
-      if (userArea !== "caninos") {
-        const cats = await db.gateraRecords
-          .filter((c) =>
-            Boolean(
-              c.microchip.toLowerCase().includes(q) ||
-              c.nombre.toLowerCase().includes(q) ||
-              c.ubicacion.toLowerCase().includes(q) ||
-              c.hc.toLowerCase().includes(q) ||
-              (c.shortChip && c.shortChip.toLowerCase().includes(q))
-            )
-          )
-          .limit(10)
-          .toArray();
-
-        cats.forEach((c) => {
-          results.push({
-            microchip: c.microchip,
-            name: c.nombre,
-            location: c.ubicacion,
-            species: "gato",
-            isFeral: c.isFeral,
-            medication: c.medicacion,
-            notes: `HC: ${c.hc}. ${c.pendientes || ""}`,
-          });
-        });
-      }
+      });
 
       setSearchResults(results);
     }, 200);
@@ -176,12 +148,11 @@ export const AssignAnimalModal: React.FC<AssignAnimalModalProps> = ({
     setIsSaving(true);
 
     try {
-      const taskArea = selectedAnimal.species === "gato" ? "gatera" : "caninos";
       const finalInstruction = instruction || "Labor asignada por Médico Veterinario";
 
       const newTask: ShiftTask = {
         animalName: selectedAnimal.name,
-        species: selectedAnimal.species,
+        species: "gato",
         microchip: selectedAnimal.microchip,
         location: selectedAnimal.location,
         medication: finalInstruction,
@@ -190,13 +161,20 @@ export const AssignAnimalModal: React.FC<AssignAnimalModalProps> = ({
         isCompleted: false,
         isFeral: selectedAnimal.isFeral,
         notes: customNotes ? `${customNotes} | ${selectedAnimal.notes || ""}` : selectedAnimal.notes,
-        area: taskArea,
+        area: "gatera",
         assignedTo: assignedStaff ? assignedStaff.name : undefined,
         assignedRole: assignedStaff ? (assignedStaff.role as any) : undefined,
       };
 
       const id = await db.shiftTasks.add(newTask);
       newTask.id = id;
+
+      // Sincronizar en tiempo real con Supabase
+      if (typeof window !== "undefined" && navigator.onLine) {
+        import("@/lib/supabase").then(({ syncShiftTaskToSupabase }) => {
+          syncShiftTaskToSupabase(newTask).catch(console.warn);
+        });
+      }
 
       if (typeof window !== "undefined" && "vibrate" in navigator) {
         navigator.vibrate([100, 50, 100]);
@@ -424,7 +402,7 @@ export const AssignAnimalModal: React.FC<AssignAnimalModalProps> = ({
               <option value="medicacion">💊 Medicación / Tratamiento</option>
               <option value="limpieza">🩹 Curación de Herida</option>
               <option value="baño">🚿 Baño Medicado</option>
-              <option value="bravecto">🛡️ Aplicación Bravecto</option>
+              <option value="desparasitacion">🧴 Desparasitación Felina (Pipeta / Revolution)</option>
               <option value="nebulizacion">🌬️ Nebulización / Inhalación</option>
             </select>
           </div>

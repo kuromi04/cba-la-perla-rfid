@@ -76,7 +76,28 @@ export async function getAllStaff(): Promise<StaffMember[]> {
     } catch {}
   }
 
-  // REGLA DE ORO: Solo el usuario creador (MASTER_ADMIN) puede ser 'admin'.
+  // Sincronizar con Supabase en la nube para que todos los dispositivos vean al personal
+  if (typeof window !== "undefined" && navigator.onLine) {
+    try {
+      const { fetchStaffFromSupabase } = await import("./supabase");
+      const cloudStaff = await fetchStaffFromSupabase();
+      if (cloudStaff && cloudStaff.length > 0) {
+        // Combinar evitando duplicados
+        const staffMap = new Map<string, StaffMember>();
+        list.forEach((s) => staffMap.set(s.id, s));
+        cloudStaff.forEach((s) => staffMap.set(s.id, s));
+        list = Array.from(staffMap.values());
+
+        // Cachear en Dexie para disponibilidad offline
+        for (const s of cloudStaff) {
+          await db.staff.put(s).catch(() => {});
+        }
+      }
+    } catch (err) {
+      console.warn("Supabase staff sync non-blocking error:", err);
+    }
+  }
+
   // REGLA DE ORO: Solo el usuario creador (MASTER_ADMIN) puede ser 'admin'.
   // Cualquier otro usuario que intente tener 'admin' se normaliza a 'veterinario'.
   // REGLA GATERA EXCLUSIVA: Todo el personal opera exclusivamente en 'gatera'.
@@ -156,6 +177,16 @@ export async function registerStaffMember(data: {
     console.error("Error saving to Dexie staff:", err);
   }
 
+  // Sincronizar en Supabase en la nube para visibilidad instantánea en todos los dispositivos
+  if (typeof window !== "undefined" && navigator.onLine) {
+    try {
+      const { syncStaffToSupabase } = await import("./supabase");
+      await syncStaffToSupabase(newMember);
+    } catch (err) {
+      console.warn("Error syncing new staff to Supabase:", err);
+    }
+  }
+
   // Sincronizar en localStorage
   if (typeof window !== "undefined") {
     try {
@@ -180,6 +211,19 @@ export async function deleteStaffMember(id: string): Promise<void> {
   try {
     await db.staff.delete(id);
   } catch {}
+
+  // Eliminar en Supabase en la nube
+  if (typeof window !== "undefined" && navigator.onLine) {
+    try {
+      const { supabase } = await import("./supabase");
+      if (supabase) {
+        await supabase.from("staff").delete().eq("id", id);
+        await supabase.from("staff_presence").delete().eq("staff_id", id);
+      }
+    } catch (err) {
+      console.warn("Error deleting staff from Supabase:", err);
+    }
+  }
 
   if (typeof window !== "undefined") {
     try {

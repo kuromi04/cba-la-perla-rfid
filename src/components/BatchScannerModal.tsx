@@ -722,7 +722,7 @@ export const BatchScannerModal: React.FC<BatchScannerModalProps> = ({
     for (const item of validFound) {
       const chip = item.animal!.microchip;
       const targetLoc = applyLocationChange && batchLocation ? batchLocation.trim().toUpperCase() : item.details?.location || item.animal!.location;
-      const area = item.animal!.species === "gato" ? ("gatera" as const) : ("caninos" as const);
+      const area = "gatera" as const;
       const treatmentCount = item.details?.hasActiveTreatment ? 1 : 0;
 
       const existing = await db.census.where("microchip").equals(chip).first();
@@ -810,7 +810,7 @@ export const BatchScannerModal: React.FC<BatchScannerModalProps> = ({
           appliedAt: nowIso,
           appliedBy: operatorName,
           role: currentUser?.role || "veterinario",
-          area: item.animal!.species === "gato" ? "gatera" : "caninos",
+          area: "gatera",
           dosisNumero: newApplied,
           faltantesRestantes: newMissing,
         });
@@ -1123,8 +1123,8 @@ export const BatchScannerModal: React.FC<BatchScannerModalProps> = ({
                   <span className="text-lg font-black text-purple-900">{foundCats}</span>
                 </div>
                 <div className="p-2.5 bg-emerald-50 rounded-2xl border border-emerald-200">
-                  <span className="block text-[10px] uppercase font-bold text-emerald-700">🐶 Caninos</span>
-                  <span className="text-lg font-black text-emerald-900">{foundDogs}</span>
+                  <span className="block text-[10px] uppercase font-bold text-emerald-700">💊 Tratamientos</span>
+                  <span className="text-lg font-black text-emerald-900">{withTreatmentCount}</span>
                 </div>
                 <div className="p-2.5 bg-amber-50 rounded-2xl border border-amber-200">
                   <span className="block text-[10px] uppercase font-bold text-amber-700">⚠️ No Registrados</span>

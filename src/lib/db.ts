@@ -110,7 +110,7 @@ export interface ShiftTask {
   location: string;
   medication: string;
   shift: "mañana" | "tarde" | "noche";
-  laborType: "medicacion" | "limpieza" | "baño" | "nebulizacion" | "bravecto";
+  laborType: "medicacion" | "limpieza" | "baño" | "nebulizacion" | "desparasitacion" | "bravecto";
   isCompleted: boolean;
   completedAt?: string;
   completedBy?: string;

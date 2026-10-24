@@ -25,7 +25,7 @@ import {
   ArrowUp,
   Cloud,
 } from "lucide-react";
-import { isSupabaseConfigured, syncAllLocalToSupabase } from "@/lib/supabase";
+import { isSupabaseConfigured, syncAllLocalToSupabase, recordStaffPresence } from "@/lib/supabase";
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<"scanner" | "turnos" | "planilla" | "kardex" | "census">("scanner");
@@ -140,11 +140,26 @@ export default function Home() {
     };
   }, []);
 
+  // Transmitir presencia activa en tiempo real a Supabase para supervisión en vivo
+  useEffect(() => {
+    if (!currentUser) return;
+    recordStaffPresence(currentUser);
+
+    const timer = setInterval(() => {
+      if (typeof window !== "undefined" && navigator.onLine) {
+        recordStaffPresence(currentUser);
+      }
+    }, 25000);
+
+    return () => clearInterval(timer);
+  }, [currentUser]);
+
   const handleSelectUser = (user: StaffMember) => {
     setCurrentUser(user);
     if (typeof window !== "undefined") {
       localStorage.setItem("cba_laperla_active_user", user.id);
     }
+    recordStaffPresence(user);
   };
 
   const handleSelectWorkerSession = (member: StaffMember) => {
