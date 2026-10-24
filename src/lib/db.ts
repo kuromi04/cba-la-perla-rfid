@@ -151,8 +151,14 @@ function estimateTotalDoses(med: string, section?: string, dosisBrav?: string): 
  * No genera registros demo, de prueba ni dummy.
  */
 export async function initializeDatabaseIfEmpty(forceReset: boolean = false) {
-  // Si hay datos dummy previos en db.animals, purgamos y limpiamos
-  const dummyCheck = await db.animals.filter((a) => a.microchip.startsWith("DUMMY_") || a.microchip.startsWith("dummy_")).count();
+  // Si hay datos dummy previos en db.animals o db.census, purgamos y limpiamos
+  const dummyCheck = await db.animals.filter((a) =>
+    a.microchip.startsWith("DUMMY_") ||
+    a.microchip.startsWith("dummy_") ||
+    a.microchip.startsWith("98200041234") ||
+    a.name === "Toby" ||
+    a.name === "Rocky"
+  ).count();
   if (dummyCheck > 0 || forceReset) {
     console.log("Limpiando registros demo anteriores y restableciendo datos 100% reales...");
     await db.animals.clear();
@@ -160,6 +166,13 @@ export async function initializeDatabaseIfEmpty(forceReset: boolean = false) {
     await db.shelterRecords.clear();
     await db.gateraRecords.clear();
     await db.shiftTasks.clear();
+    // Limpiar también registros demo del censo
+    const demoCensus = await db.census.toArray();
+    for (const c of demoCensus) {
+      if (isDemoRecord(c.microchip, c.animalName, c.location) && c.id) {
+        await db.census.delete(c.id);
+      }
+    }
   }
 
   const gateraCount = await db.gateraRecords.count();
@@ -667,24 +680,125 @@ export async function purgeObsoleteGateraRecords(): Promise<{
 }
 
 /**
+ * Verifica si un registro es de prueba o demo histórico
+ */
+export function isDemoRecord(chip: string, name?: string, loc?: string): boolean {
+  const c = (chip || "").trim().toUpperCase();
+  const n = (name || "").trim().toUpperCase();
+  const l = (loc || "").trim().toUpperCase();
+
+  if (c.startsWith("98200041234") || c.startsWith("982000412345")) return true;
+  if (c.startsWith("DUMMY_") || c.startsWith("TEST_") || c.startsWith("DEMO_")) return true;
+  if ((n === "TOBY" || n === "ROCKY" || n === "MAX") && (l.includes("CANIL-01") || l.includes("CANIL-04") || c.startsWith("982000"))) return true;
+  return false;
+}
+
+/**
  * REGLA DE ORO: Garantiza que los microchips sean 100% únicos y sin duplicados.
- * Elimina cualquier registro redundante en db.animals, db.gateraRecords, db.shelterRecords y db.census.
+ * Elimina cualquier registro redundante o demo en db.animals, db.gateraRecords, db.shelterRecords y db.census.
  */
 export async function deduplicateDatabaseRecords(): Promise<{
   animalsRemoved: number;
   gateraRemoved: number;
   censusRemoved: number;
+  demoRemoved: number;
 }> {
   let animalsRemoved = 0;
   let gateraRemoved = 0;
   let censusRemoved = 0;
+  let demoRemoved = 0;
 
   try {
-    // 1. Desduplicar db.gateraRecords
+    // 0. PURGA DE REGISTROS DEMO / MOCK EN TODAS LAS TABLAS
+    // a. En db.census
+    const allCensus = await db.census.toArray();
+    for (const item of allCensus) {
+      if (isDemoRecord(item.microchip, item.animalName, item.location)) {
+        if (item.id) {
+          await db.census.delete(item.id);
+          demoRemoved++;
+        }
+      }
+    }
+
+    // b. En db.animals
+    const allAnimals = await db.animals.toArray();
+    for (const a of allAnimals) {
+      if (isDemoRecord(a.microchip, a.name, a.location)) {
+        if (a.id) {
+          await db.animals.delete(a.id);
+          demoRemoved++;
+        }
+      }
+    }
+
+    // c. En db.kardex
+    const allKardex = await db.kardex.toArray();
+    for (const k of allKardex) {
+      if (isDemoRecord(k.microchip)) {
+        if (k.id) {
+          await db.kardex.delete(k.id);
+          demoRemoved++;
+        }
+      }
+    }
+
+    // d. En db.shiftTasks
+    const allTasks = await db.shiftTasks.toArray();
+    for (const t of allTasks) {
+      if (isDemoRecord(t.microchip, t.animalName, t.location)) {
+        if (t.id) {
+          await db.shiftTasks.delete(t.id);
+          demoRemoved++;
+        }
+      }
+    }
+
+    // 1. DESDUPLICAR db.census:
+    // Resolver chips cortos incompletos (ej. '6713' vs '941000027956713') y lecturas repetidas
+    const currentCensus = await db.census.toArray();
+    
+    // Identificar todos los microchips completos (>= 10 dígitos)
+    const fullChips: string[] = [];
+    for (const c of currentCensus) {
+      const chip = c.microchip.trim().toUpperCase();
+      if (chip.length >= 10 && !fullChips.includes(chip)) fullChips.push(chip);
+    }
+
+    // Buscar chips cortos que son sufijos de un chip completo en el censo
+    for (const item of currentCensus) {
+      const chip = item.microchip.trim().toUpperCase();
+      if (chip.length < 10) {
+        // Verificar si existe un chip completo que termine en este chip corto
+        const hasParent = fullChips.some((full) => full.endsWith(chip) && full !== chip);
+        if (hasParent && item.id) {
+          await db.census.delete(item.id);
+          censusRemoved++;
+        }
+      }
+    }
+
+    // Desduplicar chips exactos en db.census (conservar el más reciente por ID/fecha)
+    const refreshedCensus = await db.census.orderBy("id").reverse().toArray();
+    const seenCensusChips = new Set<string>();
+    for (const item of refreshedCensus) {
+      const chip = item.microchip.trim().toUpperCase();
+      if (!chip) continue;
+      if (seenCensusChips.has(chip)) {
+        if (item.id) {
+          await db.census.delete(item.id);
+          censusRemoved++;
+        }
+      } else {
+        seenCensusChips.add(chip);
+      }
+    }
+
+    // 2. DESDUPLICAR db.gateraRecords
     const gateraList = await db.gateraRecords.toArray();
     const seenGatera = new Map<string, number>();
     for (const cat of gateraList) {
-      const chip = cat.microchip.trim();
+      const chip = cat.microchip.trim().toUpperCase();
       if (!chip) continue;
       if (seenGatera.has(chip)) {
         if (cat.id) {
@@ -696,27 +810,30 @@ export async function deduplicateDatabaseRecords(): Promise<{
       }
     }
 
-    // 2. Desduplicar db.census (un solo registro por chip en censo)
-    const censusList = await db.census.toArray();
-    const seenCensus = new Map<string, number>();
-    for (const item of censusList) {
-      const chip = item.microchip.trim();
-      if (!chip) continue;
-      if (seenCensus.has(chip)) {
-        if (item.id) {
-          await db.census.delete(item.id);
-          censusRemoved++;
+    // 3. DESDUPLICAR db.animals
+    // Primero, si hay animales con chip corto (ej. '6713') y existe el animal con chip completo (ej. '941000027956713')
+    const refreshedAnimals = await db.animals.toArray();
+    const animalFullChips: string[] = [];
+    for (const a of refreshedAnimals) {
+      const chip = a.microchip.trim().toUpperCase();
+      if (chip.length >= 10 && !animalFullChips.includes(chip)) animalFullChips.push(chip);
+    }
+    for (const a of refreshedAnimals) {
+      const chip = a.microchip.trim().toUpperCase();
+      if (chip.length < 10) {
+        const hasParent = animalFullChips.some((full) => full.endsWith(chip) && full !== chip);
+        if (hasParent && a.id) {
+          await db.animals.delete(a.id);
+          animalsRemoved++;
         }
-      } else {
-        if (item.id) seenCensus.set(chip, item.id);
       }
     }
 
-    // 3. Desduplicar db.animals
-    const animalsList = await db.animals.toArray();
+    // Luego, desduplicar chips exactos en db.animals
+    const remainingAnimals = await db.animals.toArray();
     const seenAnimals = new Map<string, number>();
-    for (const a of animalsList) {
-      const chip = a.microchip.trim();
+    for (const a of remainingAnimals) {
+      const chip = a.microchip.trim().toUpperCase();
       if (!chip) continue;
       if (seenAnimals.has(chip)) {
         if (a.id) {
@@ -728,8 +845,8 @@ export async function deduplicateDatabaseRecords(): Promise<{
       }
     }
   } catch (err) {
-    console.error("Error al desduplicar base de datos:", err);
+    console.error("Error al desduplicar base de datos y limpiar datos demo:", err);
   }
 
-  return { animalsRemoved, gateraRemoved, censusRemoved };
+  return { animalsRemoved, gateraRemoved, censusRemoved, demoRemoved };
 }

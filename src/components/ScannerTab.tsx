@@ -244,14 +244,26 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
 
   const handleConfirmCensus = async () => {
     if (!currentAnimal) return;
-
     const nowIso = new Date().toISOString();
-    const existing = await db.census.where("microchip").equals(currentAnimal.microchip).first();
+    const cleanChip = currentAnimal.microchip.trim().toUpperCase();
+    const allCensus = await db.census.toArray();
+    // Buscar coincidencia exacta o por sufijo/fragmento para evitar duplicar chips cortos
+    const existing = allCensus.find(
+      (c) => {
+        const itemChip = c.microchip.trim().toUpperCase();
+        return (
+          itemChip === cleanChip ||
+          (cleanChip.length >= 10 && cleanChip.endsWith(itemChip)) ||
+          (itemChip.length >= 10 && itemChip.endsWith(cleanChip))
+        );
+      }
+    );
     const area = currentAnimal.species === "gato" ? "gatera" : "caninos";
     const treatmentCount = shelterEntries.filter((e) => e.medicacion).length;
 
     if (existing?.id) {
       await db.census.update(existing.id, {
+        microchip: cleanChip.length >= existing.microchip.length ? cleanChip : existing.microchip,
         animalName: currentAnimal.name,
         species: currentAnimal.species,
         location: currentAnimal.location,
@@ -260,9 +272,17 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
         treatmentCount,
         area,
       });
+
+      // Eliminar cualquier otro registro residual con el mismo chip
+      const leftovers = allCensus.filter(
+        (c) => c.id !== existing.id && (c.microchip.trim().toUpperCase() === cleanChip || cleanChip.endsWith(c.microchip.trim().toUpperCase()))
+      );
+      for (const left of leftovers) {
+        if (left.id) await db.census.delete(left.id);
+      }
     } else {
       await db.census.add({
-        microchip: currentAnimal.microchip,
+        microchip: cleanChip,
         animalName: currentAnimal.name,
         species: currentAnimal.species,
         location: currentAnimal.location,

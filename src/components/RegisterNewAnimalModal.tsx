@@ -265,9 +265,21 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
       }
 
       // 3. Registrar o Actualizar en el Censo Automático
-      const existingCensus = await db.census.where("microchip").equals(cleanChip).first();
+      const allCensus = await db.census.toArray();
+      const existingCensus = allCensus.find(
+        (c) => {
+          const itemChip = c.microchip.trim().toUpperCase();
+          return (
+            itemChip === cleanChip ||
+            (cleanChip.length >= 10 && cleanChip.endsWith(itemChip)) ||
+            (itemChip.length >= 10 && itemChip.endsWith(cleanChip))
+          );
+        }
+      );
+
       if (existingCensus?.id) {
         await db.census.update(existingCensus.id, {
+          microchip: cleanChip.length >= existingCensus.microchip.length ? cleanChip : existingCensus.microchip,
           animalName: formattedName !== "S/N" ? formattedName : (existingCensus.animalName || "S/N"),
           species,
           location: formattedLocation,
@@ -276,6 +288,14 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
           treatmentCount: hasTreatment ? 1 : existingCensus.treatmentCount,
           area: species === "gato" ? "gatera" : "caninos",
         });
+
+        // Eliminar cualquier duplicado residual
+        const leftovers = allCensus.filter(
+          (c) => c.id !== existingCensus.id && (c.microchip.trim().toUpperCase() === cleanChip || cleanChip.endsWith(c.microchip.trim().toUpperCase()))
+        );
+        for (const left of leftovers) {
+          if (left.id) await db.census.delete(left.id);
+        }
       } else {
         await db.census.add({
           microchip: cleanChip,

@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
-import { db, CensusRecord, Animal, KardexRecord, resetDatabaseWithRealData, purgeObsoleteGateraRecords } from "@/lib/db";
+import { db, CensusRecord, Animal, KardexRecord, resetDatabaseWithRealData, purgeObsoleteGateraRecords, deduplicateDatabaseRecords } from "@/lib/db";
 import { StaffMember } from "@/lib/staff";
 import {
   FileSpreadsheet,
@@ -17,6 +17,7 @@ import {
   AlertTriangle,
   X,
   Sparkles,
+  RotateCcw,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { BatchScannerModal } from "./BatchScannerModal";
@@ -105,6 +106,9 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
   };
 
   const loadData = async () => {
+    // Purga y desduplicación automática silenciosa
+    await deduplicateDatabaseRecords();
+
     let list = await db.census.orderBy("id").reverse().toArray();
     let animalsList = await db.animals.toArray();
 
@@ -123,6 +127,69 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
   useEffect(() => {
     loadData();
   }, [currentUser?.area]);
+
+  const handleCleanDuplicatesAndDemo = async () => {
+    setIsSyncing(true);
+    setSyncMessage("Limpiando datos demo de prueba y desduplicando microchips en el censo...");
+    try {
+      const stats = await deduplicateDatabaseRecords();
+      await loadData();
+      setSyncMessage(
+        `🧹 Limpieza completada: ${stats.demoRemoved} registros demo y ${stats.censusRemoved} duplicados eliminados del censo.`
+      );
+    } catch (err) {
+      console.error(err);
+      setSyncMessage("Error al limpiar registros.");
+    } finally {
+      setIsSyncing(false);
+      setTimeout(() => setSyncMessage(null), 5000);
+    }
+  };
+
+  const handleDeleteCensusRecord = async (record: CensusRecord) => {
+    const isAuthorized = currentUser ? (currentUser.role === "veterinario" || currentUser.role === "admin") : true;
+    if (!isAuthorized) {
+      setSyncMessage("⛔ Regla de Oro: Solo Médicos Veterinarios y Administradores tienen autorización para eliminar registros del censo.");
+      setTimeout(() => setSyncMessage(null), 4000);
+      return;
+    }
+
+    if (confirm(`¿Eliminar al animal ${record.animalName} (Chip: ${record.microchip}) del registro de censo?`)) {
+      if (record.id) {
+        await db.census.delete(record.id);
+        await loadData();
+        setSyncMessage(`🗑️ Registro de censo eliminado: ${record.animalName} (${record.microchip})`);
+        setTimeout(() => setSyncMessage(null), 4000);
+      }
+    }
+  };
+
+  const handleClearTodayCensus = async () => {
+    const isAuthorized = currentUser ? (currentUser.role === "veterinario" || currentUser.role === "admin") : true;
+    if (!isAuthorized) {
+      setSyncMessage("⛔ Regla de Oro: Solo Médicos Veterinarios y Administradores pueden reiniciar el censo.");
+      setTimeout(() => setSyncMessage(null), 4000);
+      return;
+    }
+
+    if (!confirm("⚠️ ¿Deseas vaciar todas las lecturas del censo actual para iniciar una nueva jornada de escaneo 100% limpia? (Los datos reales de animales y gatera no se borrarán).")) {
+      return;
+    }
+
+    if (currentUser?.area === "gatera" && currentUser?.role !== "admin") {
+      const gateraCensus = await db.census.where("area").equals("gatera").toArray();
+      for (const c of gateraCensus) if (c.id) await db.census.delete(c.id);
+    } else if (currentUser?.area === "caninos" && currentUser?.role !== "admin") {
+      const caninosCensus = await db.census.where("area").equals("caninos").toArray();
+      for (const c of caninosCensus) if (c.id) await db.census.delete(c.id);
+    } else {
+      await db.census.clear();
+    }
+
+    await loadData();
+    setSyncMessage("✨ Censo vaciado con éxito. Listo para comenzar la nueva ronda de lecturas.");
+    setTimeout(() => setSyncMessage(null), 4000);
+  };
 
   const handleSyncRealData = async () => {
     setIsSyncing(true);
@@ -280,16 +347,38 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
               <span>Exportar (.xlsx)</span>
             </button>
 
+            <button
+              type="button"
+              onClick={handleCleanDuplicatesAndDemo}
+              className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-2xl text-xs font-black flex items-center gap-2 shadow-lg shadow-amber-600/25 active:scale-95 transition-all"
+              title="Eliminar datos de prueba demo y unificar chips duplicados"
+            >
+              <Sparkles className="w-4 h-4 text-amber-100" />
+              <span>Limpiar Demos y Duplicados</span>
+            </button>
+
             {(currentUser ? (currentUser.role === "veterinario" || currentUser.role === "admin") : true) && (
-              <button
-                type="button"
-                onClick={openPurgeModal}
-                className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-2xl text-xs font-black flex items-center gap-2 shadow-lg shadow-rose-600/25 active:scale-95 transition-all"
-                title="Depurar registros de Gatera que no se hayan actualizado en el censo, preservando 100% los felinos ferales (Solo Médicos y Admin)"
-              >
-                <Trash2 className="w-4 h-4 text-rose-200" />
-                <span>Depurar Gatera (Vet/Admin)</span>
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={openPurgeModal}
+                  className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-2xl text-xs font-black flex items-center gap-2 shadow-lg shadow-rose-600/25 active:scale-95 transition-all"
+                  title="Depurar registros de Gatera que no se hayan actualizado en el censo, preservando 100% los felinos ferales (Solo Médicos y Admin)"
+                >
+                  <Trash2 className="w-4 h-4 text-rose-200" />
+                  <span>Depurar Gatera (Vet/Admin)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleClearTodayCensus}
+                  className="px-4 py-2.5 bg-slate-700 hover:bg-slate-800 text-white rounded-2xl text-xs font-black flex items-center gap-2 shadow-lg shadow-slate-700/25 active:scale-95 transition-all"
+                  title="Vaciar las lecturas del censo actual para iniciar una jornada limpia desde cero"
+                >
+                  <RotateCcw className="w-4 h-4 text-slate-300" />
+                  <span>Reiniciar Censo (Vet/Admin)</span>
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -376,14 +465,26 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
                     Chip: {item.microchip} • Verificado por: {item.scannedBy}
                   </span>
                 </div>
-                <div className="text-right">
-                  <span className="text-[10px] text-emerald-700 font-bold block">
-                    {new Date(item.scannedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                  </span>
-                  {item.treatmentCount > 0 && (
-                    <span className="text-[9px] bg-amber-100 text-amber-800 font-black px-1.5 py-0.5 rounded">
-                      {item.treatmentCount} Tratamientos
+                <div className="text-right flex items-center gap-2">
+                  <div>
+                    <span className="text-[10px] text-emerald-700 font-bold block">
+                      {new Date(item.scannedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                     </span>
+                    {item.treatmentCount > 0 && (
+                      <span className="text-[9px] bg-amber-100 text-amber-800 font-black px-1.5 py-0.5 rounded">
+                        {item.treatmentCount} Tratamientos
+                      </span>
+                    )}
+                  </div>
+                  {(currentUser ? (currentUser.role === "veterinario" || currentUser.role === "admin") : true) && (
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteCensusRecord(item)}
+                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
+                      title="Eliminar este registro del censo (Solo Médicos y Admin)"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                    </button>
                   )}
                 </div>
               </div>
