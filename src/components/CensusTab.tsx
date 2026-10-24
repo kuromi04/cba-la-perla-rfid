@@ -213,17 +213,17 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
 
   const handleSyncRealData = async () => {
     setIsSyncing(true);
-    setSyncMessage("Verificando y sincronizando datos oficiales de Gatera (439 felinos)...");
+    setSyncMessage("Sincronizando censo dinámico con la nube (base + nuevos ingresos en campo)...");
     try {
       await resetDatabaseWithRealData();
-      await loadData();
       if (typeof window !== "undefined" && navigator.onLine) {
         try {
-          const { syncAllLocalToSupabase } = await import("@/lib/supabase");
-          syncAllLocalToSupabase().catch(console.warn);
+          const { syncAnimalsBidirectional } = await import("@/lib/db");
+          await syncAnimalsBidirectional();
         } catch {}
       }
-      setSyncMessage("✅ ¡Base de datos sincronizada con éxito! Todos los felinos cargados con sus colores oficiales.");
+      await loadData();
+      setSyncMessage("✅ ¡Censo sincronizado con éxito! Registros base y nuevos ingresos en campo actualizados.");
     } catch (e: any) {
       console.error("Error en sincronización:", e);
       setSyncMessage(`Error durante la sincronización: ${e?.message || e}`);

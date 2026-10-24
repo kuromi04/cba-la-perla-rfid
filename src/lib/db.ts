@@ -215,8 +215,23 @@ export async function initializeDatabaseIfEmpty(forceReset: boolean = false) {
 
   const dogCount = await db.animals.filter((a) => a.species === "perro").count();
 
+  const baseChips = new Set(GATERA_CATS_DATA.map((c) => c.microchip.trim().toUpperCase()));
+
+  // Preservar felinos nuevos registrados en campo (no base)
+  let customAnimals: Animal[] = [];
+  let customGatera: GateraCat[] = [];
+  let customKardex: KardexRecord[] = [];
+  let customTasks: ShiftTask[] = [];
+
   if (dummyCheck > 0 || dogCount > 0 || forceReset) {
     console.log("Limpiando datos anteriores y configurando sistema EXCLUSIVO GATERA...");
+
+    // Extraer registros no-base (nuevos felinos ingresados en campo)
+    customAnimals = await db.animals.filter((a) => a.species === "gato" && !baseChips.has(a.microchip.trim().toUpperCase())).toArray();
+    customGatera = await db.gateraRecords.filter((g) => !baseChips.has(g.microchip.trim().toUpperCase())).toArray();
+    customKardex = await db.kardex.filter((k) => !baseChips.has(k.microchip.trim().toUpperCase())).toArray();
+    customTasks = await db.shiftTasks.filter((t) => !baseChips.has(t.microchip.trim().toUpperCase())).toArray();
+
     await db.animals.clear();
     await db.kardex.clear();
     await db.shelterRecords.clear();
@@ -341,8 +356,27 @@ export async function initializeDatabaseIfEmpty(forceReset: boolean = false) {
     await db.kardex.put(k).catch(() => {});
   }
 
+  // Restaurar felinos nuevos registrados en campo (no sobreescribir ni perder ingresos)
+  for (const ca of customAnimals) {
+    await db.animals.put(ca).catch(() => {});
+  }
+  for (const cg of customGatera) {
+    await db.gateraRecords.put(cg).catch(() => {});
+  }
+  for (const ck of customKardex) {
+    await db.kardex.put(ck).catch(() => {});
+  }
+  for (const ct of customTasks) {
+    await db.shiftTasks.put(ct).catch(() => {});
+  }
+
   // Regla de Oro: Desduplicación garantizada en todas las tablas
   await deduplicateDatabaseRecords();
+
+  // Sincronización en segundo plano con la nube si hay conexión
+  if (typeof window !== "undefined" && navigator.onLine) {
+    syncAnimalsBidirectional().catch(console.warn);
+  }
 
   return await db.animals.count();
 }
@@ -353,7 +387,140 @@ export async function initializeDatabaseIfEmpty(forceReset: boolean = false) {
 export async function resetDatabaseWithRealData() {
   await initializeDatabaseIfEmpty(true);
   await db.shiftTasks.clear();
-  return await generateTodayShiftTasks();
+  const tasks = await generateTodayShiftTasks();
+  if (typeof window !== "undefined" && navigator.onLine) {
+    await syncAnimalsBidirectional().catch(console.warn);
+  }
+  return tasks;
+}
+
+/**
+ * Sincronización bidireccional de animales entre Dexie local y Supabase en la nube.
+ * Permite alimentar el censo dinámicamente con nuevos rescates y registros hechos en otros dispositivos.
+ */
+export async function syncAnimalsBidirectional(): Promise<{ pulled: number; pushed: number }> {
+  try {
+    const { fetchAnimalsFromSupabase, syncAnimalToSupabase } = await import("./supabase");
+    const remoteAnimals = await fetchAnimalsFromSupabase();
+    let pulled = 0;
+    let pushed = 0;
+
+    for (const remote of remoteAnimals) {
+      const chip = remote.microchip.trim().toUpperCase();
+      const existing = await db.animals.where("microchip").equals(chip).first();
+
+      if (!existing) {
+        // Nuevo felino registrado desde otro dispositivo
+        await db.animals.put(remote);
+
+        // Guardar también en gateraRecords para mantener la planilla consistente
+        await db.gateraRecords.put({
+          nroAnimal: remote.nroAnimal || String((await db.gateraRecords.count()) + 1),
+          microchip: chip,
+          shortChip: remote.shortChip || (chip.length > 7 ? chip.slice(-7) : chip),
+          nombre: remote.name,
+          color: remote.color || "",
+          sexo: (remote.gender === "hembra" ? "hembra" : "macho") as "macho" | "hembra",
+          sexoCode: remote.sexoCode || (remote.gender === "hembra" ? "HFA" : "MFA"),
+          grupoEdad: remote.grupoEdad || "adulto",
+          raza: remote.breed || "DPC",
+          edad: remote.edad || "",
+          tipoIngreso: remote.tipoIngreso || "RES",
+          condicionCorporal: remote.condicionCorporal || "",
+          estadoSalud: remote.estadoSalud || "",
+          ubicacion: remote.location,
+          status: remote.status,
+          fechaFallecimiento: remote.fechaFallecimiento,
+          causaFallecimiento: remote.causaFallecimiento,
+          ubicacionPrevia: remote.ubicacionPrevia,
+          pendientes: remote.notes || "",
+          hc: remote.hc || "",
+          isFeral: remote.isFeral || false,
+          observacionesMedicas: remote.observacionesMedicas || "",
+          medicoVeterinario: remote.medicoVeterinario || "",
+          requiereSeguimiento: remote.requiereSeguimiento || "",
+          tipoSeguimiento: remote.tipoSeguimiento || "TRATAMIENTO",
+          medicacion: remote.notes || "Ninguno",
+          descripcion: remote.name,
+          sistema: "TEGUMEN",
+          fechaFinal: "HNI",
+          tipo: "FS",
+        });
+
+        pulled++;
+      } else {
+        // El felino ya existe: verificar si se actualizó ubicación, estado o fallecimiento
+        const isRemoteFallecido =
+          remote.location?.toUpperCase().trim() === "FALLECIDO" ||
+          remote.status?.toLowerCase().trim() === "fallecido";
+        const isLocalFallecido =
+          existing.location?.toUpperCase().trim() === "FALLECIDO" ||
+          existing.status?.toLowerCase().trim() === "fallecido";
+
+        const locationChanged = Boolean(remote.location && remote.location !== existing.location);
+        const statusChanged = Boolean(remote.status && remote.status !== existing.status);
+
+        if (locationChanged || statusChanged || (isRemoteFallecido && !isLocalFallecido)) {
+          if (existing.id) {
+            await db.animals.update(existing.id, {
+              location: remote.location,
+              status: remote.status,
+              fechaFallecimiento: remote.fechaFallecimiento,
+              causaFallecimiento: remote.causaFallecimiento,
+              ubicacionPrevia: remote.ubicacionPrevia || existing.location,
+              lastCensusDate: remote.lastCensusDate,
+            });
+          }
+
+          const gRec = await db.gateraRecords.where("microchip").equals(chip).first();
+          if (gRec?.id) {
+            await db.gateraRecords.update(gRec.id, {
+              ubicacion: remote.location,
+              status: remote.status,
+              fechaFallecimiento: remote.fechaFallecimiento,
+              causaFallecimiento: remote.causaFallecimiento,
+              ubicacionPrevia: remote.ubicacionPrevia || existing.location,
+            });
+          }
+
+          if (isRemoteFallecido) {
+            // Descontar inmediatamente del censo activo y de tareas
+            const cRecs = await db.census.where("microchip").equals(chip).toArray();
+            for (const c of cRecs) if (c.id) await db.census.delete(c.id);
+            await db.shiftTasks.where("microchip").equals(chip).delete();
+          } else if (locationChanged) {
+            // Actualizar ubicación en censo y tareas
+            const cRecs = await db.census.where("microchip").equals(chip).toArray();
+            for (const c of cRecs) {
+              if (c.id) await db.census.update(c.id, { location: remote.location });
+            }
+            const tasks = await db.shiftTasks.where("microchip").equals(chip).toArray();
+            for (const t of tasks) {
+              if (t.id) await db.shiftTasks.update(t.id, { location: remote.location });
+            }
+          }
+
+          pulled++;
+        }
+      }
+    }
+
+    // Subir registros locales que no estén en la nube
+    const localAnimals = await db.animals.where("species").equals("gato").toArray();
+    const remoteChips = new Set(remoteAnimals.map((r) => r.microchip.trim().toUpperCase()));
+    for (const local of localAnimals) {
+      const chip = local.microchip.trim().toUpperCase();
+      if (!remoteChips.has(chip)) {
+        await syncAnimalToSupabase(local);
+        pushed++;
+      }
+    }
+
+    return { pulled, pushed };
+  } catch (err) {
+    console.warn("syncAnimalsBidirectional error:", err);
+    return { pulled: 0, pushed: 0 };
+  }
 }
 
 // Búsqueda inteligente por chip completo, chip corto, HC, nombre o ubicación

@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
-import { initializeDatabaseIfEmpty, deduplicateDatabaseRecords } from "@/lib/db";
+import { initializeDatabaseIfEmpty, deduplicateDatabaseRecords, syncAnimalsBidirectional, db } from "@/lib/db";
 import { ScannerTab } from "@/components/ScannerTab";
 import { PlanillaEditorTab } from "@/components/PlanillaEditorTab";
 import { KardexTab } from "@/components/KardexTab";
@@ -37,6 +37,7 @@ import {
 export default function Home() {
   const [activeTab, setActiveTab] = useState<"scanner" | "turnos" | "planilla" | "kardex" | "census">("scanner");
   const [isOnline, setIsOnline] = useState<boolean>(true);
+  const [activeCatsCount, setActiveCatsCount] = useState<number>(439);
   
   // Usuario activo en sesión (obtenido dinámicamente)
   const [currentUser, setCurrentUser] = useState<StaffMember | null>(null);
@@ -79,13 +80,30 @@ export default function Home() {
     }
   };
 
+  const refreshActiveCatsCount = async () => {
+    try {
+      const count = await db.animals
+        .filter(
+          (a) =>
+            a.species === "gato" &&
+            a.location?.toUpperCase().trim() !== "FALLECIDO" &&
+            a.status?.toLowerCase().trim() !== "fallecido"
+        )
+        .count();
+      if (count > 0) setActiveCatsCount(count);
+    } catch {}
+  };
+
   useEffect(() => {
     // 1. Cargar datos 100% reales de los archivos Excel en IndexedDB y garantizar cero duplicados
     initializeDatabaseIfEmpty()
       .then(() => deduplicateDatabaseRecords())
+      .then(() => refreshActiveCatsCount())
       .then(() => {
         if (navigator.onLine && isSupabaseConfigured()) {
-          syncAllLocalToSupabase().catch(console.error);
+          syncAnimalsBidirectional()
+            .then(() => refreshActiveCatsCount())
+            .catch(console.error);
         }
       })
       .catch(console.error);
@@ -164,7 +182,10 @@ export default function Home() {
     initSession();
 
     setIsOnline(navigator.onLine);
-    const handleOnline = () => setIsOnline(true);
+    const handleOnline = () => {
+      setIsOnline(true);
+      syncAnimalsBidirectional().then(() => refreshActiveCatsCount()).catch(() => {});
+    };
     const handleOffline = () => setIsOnline(false);
 
     window.addEventListener("online", handleOnline);
@@ -173,6 +194,9 @@ export default function Home() {
     const staffTimer = setInterval(() => {
       if (navigator.onLine) {
         getAllStaff().catch(() => {});
+        syncAnimalsBidirectional().then(() => refreshActiveCatsCount()).catch(() => {});
+      } else {
+        refreshActiveCatsCount().catch(() => {});
       }
     }, 15000);
 
@@ -324,7 +348,7 @@ export default function Home() {
           </span>
           <div className="flex gap-2 text-[11px] font-bold">
             <span className="bg-purple-950 text-purple-300 border border-purple-800 px-2.5 py-0.5 rounded-lg flex items-center gap-1.5 shadow-xs">
-              🐱 Gatera CBA La Perla (439 Felinos • 24 Columnas)
+              🐱 Gatera CBA La Perla ({activeCatsCount} Felinos Activos • Censo Dinámico)
             </span>
           </div>
         </div>

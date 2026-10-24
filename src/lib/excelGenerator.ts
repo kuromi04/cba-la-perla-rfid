@@ -324,6 +324,49 @@ export async function exportOriginalShelterExcel() {
 // -------------------------------------------------------------
 export async function exportGateraExcel() {
   const cats = await db.gateraRecords.toArray();
+  const animalCats = await db.animals.where("species").equals("gato").toArray();
+  const gateraChips = new Set(cats.map((c) => c.microchip.trim().toUpperCase()));
+
+  for (const a of animalCats) {
+    const chip = a.microchip.trim().toUpperCase();
+    if (!gateraChips.has(chip)) {
+      cats.push({
+        nroAnimal: a.nroAnimal || String(cats.length + 1),
+        ubicacion: a.location,
+        microchip: chip,
+        shortChip: a.shortChip || (chip.length > 7 ? chip.slice(-7) : chip),
+        hc: a.hc || (chip.length >= 5 ? chip.slice(-5) : chip),
+        sexoCode: a.sexoCode || (a.gender === "hembra" ? "HFA" : "MFA"),
+        sexo: (a.gender === "hembra" ? "hembra" : "macho") as "macho" | "hembra",
+        grupoEdad: a.grupoEdad || "adulto",
+        raza: a.breed || "DPC",
+        isFeral: a.isFeral || false,
+        color: a.color || "",
+        tipoIngreso: a.tipoIngreso || "RES",
+        edad: a.edad || "",
+        fechaIngreso: a.fechaIngreso || "",
+        condicionCorporal: a.condicionCorporal || "",
+        estadoSalud: a.estadoSalud || "",
+        medicacion: a.notes || "",
+        observacionesMedicas: a.observacionesMedicas || a.notes || "",
+        medicoVeterinario: a.medicoVeterinario || "",
+        nombre: a.name,
+        descripcion: a.name,
+        pendientes: a.notes || "",
+        status: a.status || "activo",
+        fechaFallecimiento: a.fechaFallecimiento,
+        causaFallecimiento: a.causaFallecimiento,
+        ubicacionPrevia: a.ubicacionPrevia,
+        requiereSeguimiento: a.requiereSeguimiento || "NO",
+        tipoSeguimiento: a.tipoSeguimiento || "TRATAMIENTO",
+        sistema: "TEGUMEN",
+        fechaFinal: "HNI",
+        tipo: "FS",
+      });
+      gateraChips.add(chip);
+    }
+  }
+
   const workbook = XLSX.utils.book_new();
 
   // Hoja 1: CENSO GATERA (Felinos Activos - Estructura Fiel de las 24 Columnas del Archivo Maestro)

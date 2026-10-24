@@ -375,6 +375,18 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
         }
       }
 
+      // Sincronizar inmediatamente a la nube Supabase si hay conexión
+      if (typeof window !== "undefined" && navigator.onLine) {
+        try {
+          const { syncAnimalToSupabase } = await import("@/lib/supabase");
+          syncAnimalToSupabase(finalAnimal).catch((e) =>
+            console.warn("Error syncAnimalToSupabase en registro:", e)
+          );
+        } catch (e) {
+          console.warn("Error al importar supabase en registro:", e);
+        }
+      }
+
       // Feedback háptico
       if (typeof window !== "undefined" && "vibrate" in navigator) {
         navigator.vibrate([100, 50, 150]);

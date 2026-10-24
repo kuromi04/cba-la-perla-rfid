@@ -545,3 +545,67 @@ export async function syncAllLocalToSupabase(): Promise<{ synced: number; total:
     return { synced: 0, total: 0 };
   }
 }
+
+/**
+ * Descargar todos los animales felinos registrados en Supabase
+ * Permite alimentar el censo dinámicamente con los registros de otros dispositivos.
+ */
+export async function fetchAnimalsFromSupabase(): Promise<Animal[]> {
+  const client = getSupabaseClient();
+  if (!client) return [];
+
+  try {
+    const { data, error } = await client
+      .from("animals")
+      .select("*")
+      .eq("species", "gato")
+      .order("updated_at", { ascending: false });
+
+    if (error || !data) {
+      console.warn("Supabase fetch animals warning:", error?.message);
+      return [];
+    }
+
+    return data.map((row: any) => {
+      const attrs = row.attributes || {};
+      const isFallecido =
+        row.status === "fallecido" ||
+        attrs.location?.toUpperCase().trim() === "FALLECIDO";
+
+      return {
+        microchip: row.microchip,
+        shortChip:
+          attrs.shortChip ||
+          (row.microchip.length > 7 ? row.microchip.slice(-7) : row.microchip),
+        name: row.name,
+        species: "gato",
+        breed: row.breed || "DPC",
+        gender: row.sex === "hembra" ? "hembra" : "macho",
+        sexoCode: row.sex === "hembra" ? "HFA" : "MFA",
+        location: isFallecido ? "FALLECIDO" : (attrs.location || "GATERA"),
+        status: isFallecido ? "fallecido" : (row.status || "activo"),
+        notes: row.notes,
+        hc: attrs.hc,
+        isFeral: Boolean(attrs.isFeral),
+        color: attrs.color,
+        tipoIngreso: attrs.tipoIngreso || "RES",
+        edad: attrs.edad,
+        condicionCorporal: attrs.condicionCorporal,
+        estadoSalud: attrs.estadoSalud,
+        observacionesMedicas: row.notes,
+        requiereSeguimiento: attrs.requiereSeguimiento,
+        medicoVeterinario: attrs.medicoVeterinario,
+        retroviralStatus: row.retroviral_status || attrs.retroviralStatus,
+        vifStatus: row.vif_status || attrs.vifStatus,
+        felvStatus: row.felv_status || attrs.felvStatus,
+        fechaFallecimiento: attrs.fechaFallecimiento,
+        causaFallecimiento: attrs.causaFallecimiento,
+        ubicacionPrevia: attrs.ubicacionPrevia,
+        lastCensusDate: attrs.lastCensusDate,
+      } as Animal;
+    });
+  } catch (err) {
+    console.warn("Error fetching animals from Supabase:", err);
+    return [];
+  }
+}
