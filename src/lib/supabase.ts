@@ -2,12 +2,18 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { db, Animal, ShiftTask } from "./db";
 import { StaffMember, MASTER_ADMIN } from "./staff";
 
+export const DEFAULT_SUPABASE_URL = "https://apcevwjxqcfxjizqtrif.supabase.co";
+export const DEFAULT_SUPABASE_KEY = "sb_publishable_zUmcSAiPGdCnIgbSMUsGrw_LHzK2usV";
+
 /**
- * Obtener credenciales de Supabase (desde Variables de Entorno o localStorage)
+ * Obtener credenciales de Supabase (desde Variables de Entorno, localStorage o valores oficiales)
  */
 export function getSupabaseCredentials(): { url: string; key: string } {
-  let url = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-  let key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+  let url = process.env.NEXT_PUBLIC_SUPABASE_URL || DEFAULT_SUPABASE_URL;
+  let key =
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    DEFAULT_SUPABASE_KEY;
 
   if (typeof window !== "undefined") {
     const localUrl = localStorage.getItem("cba_supabase_url");
