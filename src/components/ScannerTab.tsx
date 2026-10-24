@@ -19,11 +19,13 @@ import {
   Printer,
   QrCode,
   ShieldAlert,
+  PlusCircle,
 } from "lucide-react";
 import { VoiceModal } from "./VoiceModal";
 import { AssignAnimalModal } from "./AssignAnimalModal";
 import { BatchScannerModal } from "./BatchScannerModal";
 import { CanilCardModal } from "./CanilCardModal";
+import { RegisterNewAnimalModal } from "./RegisterNewAnimalModal";
 import { ParsedClinicalIntent } from "@/lib/aiParser";
 import { StaffMember } from "@/lib/staff";
 
@@ -44,6 +46,8 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [isBatchOpen, setIsBatchOpen] = useState(false);
   const [isCanilCardOpen, setIsCanilCardOpen] = useState(false);
+  const [isRegisterOpen, setIsRegisterOpen] = useState(false);
+  const [preselectedSpecies, setPreselectedSpecies] = useState<"perro" | "gato">("perro");
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
 
   // Edición rápida en campo
@@ -835,36 +839,61 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
         </div>
       )}
 
-      {/* Chip No Encontrado */}
+      {/* Chip No Encontrado - Opción de Registro Completo en Base de Datos y Censo */}
       {notFound && (
-        <div className="bg-white rounded-3xl p-6 shadow-lg border border-red-200 text-center space-y-3">
-          <AlertTriangle className="w-12 h-12 text-red-500 mx-auto" />
-          <h3 className="text-lg font-bold text-slate-900">Microchip no registrado</h3>
-          <p className="text-sm text-slate-600 font-mono">{chipInput}</p>
-          <p className="text-xs text-slate-500">
-            Este animal no figura en la planilla actual. ¿Deseas ingresarlo ahora mismo?
-          </p>
-          <button
-            type="button"
-            onClick={async () => {
-              await db.shelterRecords.add({
-                section: "TRIAJE",
-                ubicacion: "TRIAJE",
-                microchip: chipInput,
-                shortChip: chipInput.slice(-7),
-                descripcion: `NUEVO INGRESO (${chipInput.slice(-4)})`,
-                medicacion: "EVALUACIÓN INICIAL",
-                fechaFinal: "HNI",
-                tipo: "S",
-                sistema: "PREVENTIVO",
-                pendientes: "INGRESO / VALORACIÓN",
-              });
-              handleSearch(chipInput);
-            }}
-            className="px-5 py-3 bg-slate-900 text-white font-bold rounded-2xl text-xs"
-          >
-            Registrar en Planilla de Triaje
-          </button>
+        <div className="bg-white rounded-3xl p-6 shadow-xl border-2 border-amber-300 text-center space-y-4 animate-in fade-in zoom-in-95">
+          <div className="w-14 h-14 bg-amber-100 text-amber-700 rounded-3xl flex items-center justify-center mx-auto border border-amber-200 shadow-sm">
+            <AlertTriangle className="w-7 h-7" />
+          </div>
+
+          <div>
+            <span className="text-[10px] font-black uppercase tracking-widest text-amber-700 bg-amber-100 px-3 py-1 rounded-full inline-block mb-1.5">
+              MICROCHIP NO REGISTRADO EN EL CENSO
+            </span>
+            <h3 className="text-xl font-mono font-black text-slate-900 tracking-wider">
+              {chipInput}
+            </h3>
+            <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+              Este animal no figura en el censo ni en las planillas oficiales. Puedes registrarlo con todos sus datos clínicos, ubicación física y medicación.
+            </p>
+          </div>
+
+          <div className="space-y-2.5 pt-1 max-w-md mx-auto">
+            <button
+              type="button"
+              onClick={() => {
+                setPreselectedSpecies(currentUser?.area === "gatera" ? "gato" : "perro");
+                setIsRegisterOpen(true);
+              }}
+              className="btn-touch w-full py-4 px-5 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white rounded-2xl font-black text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-emerald-600/25 active:scale-95 transition-all"
+            >
+              <PlusCircle className="w-5 h-5 text-emerald-200" />
+              <span>INGRESAR FICHA DE ANIMAL NUEVO</span>
+            </button>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setPreselectedSpecies("perro");
+                  setIsRegisterOpen(true);
+                }}
+                className="py-2.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-950 rounded-xl font-black text-xs border border-emerald-200 flex items-center justify-center gap-1.5 transition-all active:scale-95"
+              >
+                <span>🐶 Nuevo Canino</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPreselectedSpecies("gato");
+                  setIsRegisterOpen(true);
+                }}
+                className="py-2.5 px-3 bg-purple-50 hover:bg-purple-100 text-purple-950 rounded-xl font-black text-xs border border-purple-200 flex items-center justify-center gap-1.5 transition-all active:scale-95"
+              >
+                <span>🐱 Nuevo Felino (Gatera)</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -923,6 +952,22 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
           notes={shelterEntries[0]?.pendientes}
         />
       )}
+
+      {/* Modal de Registro Completo de Animal Nuevo en Sistema y Censo */}
+      <RegisterNewAnimalModal
+        isOpen={isRegisterOpen}
+        onClose={() => setIsRegisterOpen(false)}
+        initialMicrochip={chipInput}
+        defaultArea={preselectedSpecies === "gato" ? "gatera" : "caninos"}
+        currentUser={currentUser}
+        onAnimalRegistered={(animal) => {
+          setNotFound(false);
+          setFeedbackMessage(
+            `✨ ¡${animal.name} (${animal.species === "gato" ? "Felino" : "Canino"}) registrado y censado exitosamente en ${animal.location}!`
+          );
+          handleSearch(animal.microchip);
+        }}
+      />
     </div>
   );
 };

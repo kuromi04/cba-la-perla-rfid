@@ -2,9 +2,10 @@
 import React, { useState, useEffect } from "react";
 import { db, CensusRecord, Animal, KardexRecord, resetDatabaseWithRealData } from "@/lib/db";
 import { StaffMember } from "@/lib/staff";
-import { FileSpreadsheet, Download, RefreshCw, CheckCircle2, Search, Database, ShieldCheck, Layers } from "lucide-react";
+import { FileSpreadsheet, Download, RefreshCw, CheckCircle2, Search, Database, ShieldCheck, Layers, PlusCircle } from "lucide-react";
 import * as XLSX from "xlsx";
 import { BatchScannerModal } from "./BatchScannerModal";
+import { RegisterNewAnimalModal } from "./RegisterNewAnimalModal";
 
 interface CensusTabProps {
   currentUser?: StaffMember | null;
@@ -16,6 +17,7 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [isSyncing, setIsSyncing] = useState(false);
   const [isBatchOpen, setIsBatchOpen] = useState(false);
+  const [isRegisterOpen, setIsRegisterOpen] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
   const loadData = async () => {
@@ -169,6 +171,15 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
+              onClick={() => setIsRegisterOpen(true)}
+              className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white rounded-2xl text-xs font-black flex items-center gap-2 shadow-lg shadow-emerald-600/25 active:scale-95 transition-all"
+            >
+              <PlusCircle className="w-4 h-4 text-emerald-200" />
+              <span>Registrar Animal Nuevo</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => setIsBatchOpen(true)}
               className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-black flex items-center gap-2 shadow-lg shadow-indigo-600/25 active:scale-95 transition-all"
             >
@@ -179,10 +190,10 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
             <button
               type="button"
               onClick={handleExportExcel}
-              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-xs font-black flex items-center gap-2 shadow-lg shadow-emerald-600/25 active:scale-95 transition-all"
+              className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl text-xs font-black flex items-center gap-2 shadow-lg shadow-slate-900/25 active:scale-95 transition-all"
             >
               <FileSpreadsheet className="w-4 h-4" />
-              <span>Exportar Censo Completo (.xlsx)</span>
+              <span>Exportar (.xlsx)</span>
             </button>
           </div>
         </div>
@@ -292,6 +303,20 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
         currentUser={currentUser}
         onBatchProcessed={() => {
           loadData();
+        }}
+      />
+
+      {/* Modal para Registrar Animal Nuevo desde Censo */}
+      <RegisterNewAnimalModal
+        isOpen={isRegisterOpen}
+        onClose={() => setIsRegisterOpen(false)}
+        initialMicrochip=""
+        defaultArea={currentUser?.area || "ambas"}
+        currentUser={currentUser}
+        onAnimalRegistered={(animal) => {
+          setSyncMessage(`✨ ¡${animal.name} (${animal.species === "gato" ? "Felino" : "Canino"}) registrado y censado exitosamente en ${animal.location}!`);
+          loadData();
+          setTimeout(() => setSyncMessage(null), 4000);
         }}
       />
     </div>

@@ -1,0 +1,627 @@
+"use client";
+import React, { useState, useEffect } from "react";
+import { db, Animal } from "@/lib/db";
+import { StaffMember } from "@/lib/staff";
+import {
+  X,
+  PlusCircle,
+  AlertTriangle,
+  ShieldAlert,
+  MapPin,
+  Pill,
+  CheckCircle2,
+  FileSpreadsheet,
+  FileText,
+  Sparkles,
+  Info,
+} from "lucide-react";
+
+interface RegisterNewAnimalModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  initialMicrochip: string;
+  defaultArea?: "caninos" | "gatera" | "ambas";
+  currentUser?: StaffMember | null;
+  onAnimalRegistered: (animal: Animal) => void;
+}
+
+export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
+  isOpen,
+  onClose,
+  initialMicrochip,
+  defaultArea = "ambas",
+  currentUser,
+  onAnimalRegistered,
+}) => {
+  const initialSpecies =
+    defaultArea === "gatera" || currentUser?.area === "gatera" ? "gato" : "perro";
+
+  const [species, setSpecies] = useState<"perro" | "gato">(initialSpecies);
+  const [microchip, setMicrochip] = useState(initialMicrochip);
+  const [name, setName] = useState("");
+  const [location, setLocation] = useState("");
+  const [hc, setHc] = useState("");
+  const [breed, setBreed] = useState(initialSpecies === "gato" ? "Común Europeo" : "Mestizo");
+  const [color, setColor] = useState("");
+  const [gender, setGender] = useState<"Macho" | "Hembra">("Macho");
+  const [age, setAge] = useState("Adulto");
+  const [status, setStatus] = useState("activo");
+
+  // Sección de la planilla
+  const [sectionCanino, setSectionCanino] = useState("TRIAJE");
+  const [sectionGatera, setSectionGatera] = useState("CUARENTENA");
+
+  // Bioseguridad
+  const [isCDV, setIsCDV] = useState(false);
+  const [isFeral, setIsFeral] = useState(false);
+  const [isCuarentena, setIsCuarentena] = useState(false);
+
+  // Tratamiento opcional al ingreso
+  const [hasTreatment, setHasTreatment] = useState(false);
+  const [medication, setMedication] = useState("");
+  const [system, setSystem] = useState("PREVENTIVO");
+  const [totalDoses, setTotalDoses] = useState(7);
+  const [bravecto, setBravecto] = useState("");
+
+  // Observaciones
+  const [notes, setNotes] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (initialMicrochip) {
+      setMicrochip(initialMicrochip.trim());
+    }
+  }, [initialMicrochip]);
+
+  useEffect(() => {
+    if (species === "gato" && breed === "Mestizo") {
+      setBreed("Común Europeo");
+    } else if (species === "perro" && breed === "Común Europeo") {
+      setBreed("Mestizo");
+    }
+  }, [species]);
+
+  if (!isOpen) return null;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage(null);
+
+    const cleanChip = microchip.trim();
+    if (!cleanChip) {
+      setErrorMessage("El microchip es obligatorio.");
+      return;
+    }
+    if (!name.trim()) {
+      setErrorMessage("Por favor ingresa el nombre o identificación del animal.");
+      return;
+    }
+    if (!location.trim()) {
+      setErrorMessage("Por favor ingresa la ubicación física en el albergue (ej. CANIL 12, PATIO 3, MATERNIDAD).");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const shortChip = cleanChip.length > 7 ? cleanChip.slice(-7) : cleanChip;
+      const formattedName = name.trim().toUpperCase();
+      const formattedLocation = location.trim().toUpperCase();
+      const formattedBreed = breed.trim().toUpperCase() || (species === "gato" ? "COMÚN" : "MESTIZO");
+      const formattedColor = color.trim().toUpperCase() || "ESTÁNDAR";
+      const formattedHc = hc.trim().toUpperCase();
+      const nowIso = new Date().toISOString();
+
+      let compiledNotes = notes.trim();
+      if (isCDV && species === "perro") {
+        compiledNotes = `[CDV POSITIVO] ${compiledNotes}`.trim();
+      }
+      if (isCuarentena) {
+        compiledNotes = `[CUARENTENA] ${compiledNotes}`.trim();
+      }
+      if (isFeral) {
+        compiledNotes = `[ANIMAL FERAL] ${compiledNotes}`.trim();
+      }
+
+      // 1. Guardar en tabla central: db.animals
+      const newAnimal: Animal = {
+        microchip: cleanChip,
+        shortChip,
+        name: formattedName,
+        species,
+        breed: `${formattedBreed} - ${formattedColor}`,
+        gender: gender.toLowerCase(),
+        location: formattedLocation,
+        status: isCuarentena ? "cuarentena" : status,
+        hc: formattedHc || undefined,
+        isFeral,
+        color: formattedColor,
+        notes: compiledNotes || undefined,
+        lastCensusDate: nowIso,
+      };
+
+      await db.animals.put(newAnimal);
+
+      // 2. Guardar en la Planilla correspondiente
+      if (species === "perro") {
+        await db.shelterRecords.add({
+          section: (isCDV ? "CDV" : sectionCanino) as any,
+          ubicacion: formattedLocation,
+          microchip: cleanChip,
+          shortChip,
+          descripcion: `${formattedName} (${formattedBreed} - ${formattedColor})`,
+          medicacion: hasTreatment ? medication.trim() : "",
+          fechaFinal: hasTreatment ? `+${totalDoses} días` : "HNI",
+          tipo: "S",
+          sistema: hasTreatment ? system : "PREVENTIVO",
+          pendientes: compiledNotes || "INGRESO NUEVO",
+          dosisBravecto: bravecto.trim() || undefined,
+        });
+      } else {
+        await db.gateraRecords.add({
+          ubicacion: formattedLocation,
+          microchip: cleanChip,
+          shortChip,
+          hc: formattedHc || shortChip.slice(-5),
+          nombre: formattedName,
+          raza: formattedBreed,
+          color: formattedColor,
+          sexo: (gender.toLowerCase() === "hembra" ? "hembra" : "macho") as "macho" | "hembra",
+          edad: age,
+          isFeral,
+          tipoIngreso: "RESGUARDO",
+          condicionCorporal: "3/5",
+          estadoSalud: isCuarentena ? "CUARENTENA" : "ESTABLE",
+          fechaFinal: hasTreatment ? `+${totalDoses} días` : "HNI",
+          tipo: "S",
+          descripcion: `${formattedName} (${formattedBreed} - ${formattedColor})`,
+          medicacion: hasTreatment ? medication.trim() : "",
+          sistema: hasTreatment ? system : "GENERAL",
+          pendientes: compiledNotes || "INGRESO NUEVO GATERA",
+          desparasitante: bravecto.trim() || "AL DÍA",
+        });
+      }
+
+      // 3. Registrar Censo Automático del Nuevo Ingreso
+      await db.census.add({
+        microchip: cleanChip,
+        animalName: formattedName,
+        species,
+        location: formattedLocation,
+        scannedAt: nowIso,
+        scannedBy: currentUser?.name || "Operario de Campo",
+        treatmentCount: hasTreatment ? 1 : 0,
+        area: species === "gato" ? "gatera" : "caninos",
+      });
+
+      // 4. Si tiene tratamiento activo, registrarlo en el Kardex Clínico
+      if (hasTreatment && medication.trim()) {
+        const vetName = currentUser?.name || "Médico Veterinario";
+        await db.kardex.add({
+          microchip: cleanChip,
+          shortChip,
+          system,
+          treatment: medication.trim(),
+          description: compiledNotes || "Prescripción al ingreso",
+          startDate: nowIso.split("T")[0],
+          endDate: new Date(Date.now() + totalDoses * 86400000).toISOString().split("T")[0],
+          status: "activo",
+          prescribedBy: vetName,
+          createdAt: nowIso,
+          area: species === "gato" ? "gatera" : "caninos",
+          dosisTotales: Number(totalDoses) || 7,
+          dosisAplicadas: 0,
+          dosisFaltantes: Number(totalDoses) || 7,
+        });
+      }
+
+      // Feedback háptico
+      if (typeof window !== "undefined" && "vibrate" in navigator) {
+        navigator.vibrate([100, 50, 150]);
+      }
+
+      onAnimalRegistered(newAnimal);
+      onClose();
+    } catch (err: any) {
+      console.error("Error al registrar nuevo animal:", err);
+      setErrorMessage(`Error al guardar: ${err?.message || "Error desconocido en base de datos"}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-3 overflow-y-auto">
+      <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 my-auto max-h-[92vh] flex flex-col">
+        
+        {/* Cabecera del Modal */}
+        <div className="p-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800 shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/30">
+              <PlusCircle className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-black text-sm sm:text-base leading-tight">
+                Registrar Animal Nuevo en Sistema
+              </h3>
+              <p className="text-[11px] text-slate-400">
+                Suma el animal al Censo, a su Planilla oficial y a la base de datos
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-all"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Formulario con Scroll */}
+        <form onSubmit={handleSubmit} className="p-5 space-y-4 text-xs overflow-y-auto flex-1">
+          {errorMessage && (
+            <div className="p-3 bg-red-50 border border-red-300 text-red-900 rounded-2xl flex items-center gap-2 font-bold animate-in fade-in">
+              <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+              <span>{errorMessage}</span>
+            </div>
+          )}
+
+          {/* 1. Selector de Especie */}
+          <div>
+            <label className="font-black text-slate-700 uppercase tracking-wider block mb-1.5 text-[11px]">
+              Especie a Ingresar:
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setSpecies("perro")}
+                className={`py-3 px-4 rounded-2xl font-black text-xs flex items-center justify-center gap-2 border-2 transition-all ${
+                  species === "perro"
+                    ? "bg-emerald-50 border-emerald-600 text-emerald-950 shadow-sm"
+                    : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                <span className="text-lg">🐶</span>
+                <span>CANINO (Albergue)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSpecies("gato")}
+                className={`py-3 px-4 rounded-2xl font-black text-xs flex items-center justify-center gap-2 border-2 transition-all ${
+                  species === "gato"
+                    ? "bg-purple-50 border-purple-600 text-purple-950 shadow-sm"
+                    : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                <span className="text-lg">🐱</span>
+                <span>FELINO (Gatera)</span>
+              </button>
+            </div>
+          </div>
+
+          {/* 2. Microchip */}
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl">
+            <label className="font-bold text-slate-600 block mb-1 text-[10px] uppercase tracking-wider">
+              NÚMERO DE MICROCHIP (LEÍDO O MANUAL):
+            </label>
+            <input
+              type="text"
+              required
+              value={microchip}
+              onChange={(e) => setMicrochip(e.target.value)}
+              placeholder="Ej: 991003003806096 o 3806096"
+              className="w-full p-2.5 font-mono text-sm font-black text-slate-900 bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+
+          {/* 3. Nombre y Ubicación */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="font-black text-slate-800 block mb-1 text-[11px]">
+                NOMBRE DEL ANIMAL: <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Ej: Max, Luna, Pelusa..."
+                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold uppercase focus:bg-white"
+              />
+            </div>
+            <div>
+              <label className="font-black text-slate-800 block mb-1 text-[11px] flex items-center gap-1">
+                <MapPin className="w-3.5 h-3.5 text-indigo-600" />
+                UBICACIÓN EN CENSO: <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                placeholder={species === "gato" ? "Ej: CUARENTENA GATERA, MATERNIDAD 2" : "Ej: CANIL 14, PATIO 3, UCE 1"}
+                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold uppercase focus:bg-white"
+              />
+            </div>
+          </div>
+
+          {/* 4. Historia Clínica, Sexo y Edad */}
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <label className="font-bold text-slate-700 block mb-1 text-[10px] uppercase">
+                HISTORIA CLÍNICA:
+              </label>
+              <input
+                type="text"
+                value={hc}
+                onChange={(e) => setHc(e.target.value)}
+                placeholder="Ej: 24198"
+                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-mono font-bold"
+              />
+            </div>
+            <div>
+              <label className="font-bold text-slate-700 block mb-1 text-[10px] uppercase">
+                SEXO:
+              </label>
+              <select
+                value={gender}
+                onChange={(e) => setGender(e.target.value as any)}
+                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold"
+              >
+                <option value="Macho">Macho</option>
+                <option value="Hembra">Hembra</option>
+              </select>
+            </div>
+            <div>
+              <label className="font-bold text-slate-700 block mb-1 text-[10px] uppercase">
+                EDAD:
+              </label>
+              <input
+                type="text"
+                value={age}
+                onChange={(e) => setAge(e.target.value)}
+                placeholder="Ej: 2 años, Cachorro"
+                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold"
+              />
+            </div>
+          </div>
+
+          {/* 5. Raza y Color */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="font-bold text-slate-700 block mb-1 text-[10px] uppercase">
+                RAZA / MESTIZAJE:
+              </label>
+              <input
+                type="text"
+                value={breed}
+                onChange={(e) => setBreed(e.target.value)}
+                placeholder={species === "gato" ? "Ej: Común Europeo, Siamés" : "Ej: Mestizo, Criollo, Pitbull"}
+                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-medium"
+              />
+            </div>
+            <div>
+              <label className="font-bold text-slate-700 block mb-1 text-[10px] uppercase">
+                COLOR / SEÑAS:
+              </label>
+              <input
+                type="text"
+                value={color}
+                onChange={(e) => setColor(e.target.value)}
+                placeholder="Ej: Negro y blanco, Atigrado, Café"
+                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-medium"
+              />
+            </div>
+          </div>
+
+          {/* 6. Sección de Planilla según Especie */}
+          <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
+            <label className="font-black text-slate-800 block mb-1 text-[11px] uppercase">
+              SECCIÓN DE PLANILLA DE INGRESO:
+            </label>
+            {species === "perro" ? (
+              <select
+                value={sectionCanino}
+                onChange={(e) => setSectionCanino(e.target.value)}
+                className="w-full p-2.5 bg-white border border-slate-300 rounded-xl font-bold"
+              >
+                <option value="TRIAJE">Triaje (Ingreso Inicial)</option>
+                <option value="UCE">UCE (Unidad de Cuidados Especiales)</option>
+                <option value="CDV">Distemper CDV (Aislamiento)</option>
+                <option value="LIMPIEZAS">Limpiezas / Curaciones</option>
+                <option value="BAÑOS">Baños Medicados</option>
+                <option value="NEBULIZACIONES">Nebulizaciones Respiratorias</option>
+                <option value="NOCHE">Tratamiento Nocturno</option>
+                <option value="BRAVECTO">Desparasitación Bravecto</option>
+                <option value="ADOPCIONES">Pabellón de Adopciones</option>
+              </select>
+            ) : (
+              <select
+                value={sectionGatera}
+                onChange={(e) => setSectionGatera(e.target.value)}
+                className="w-full p-2.5 bg-white border border-slate-300 rounded-xl font-bold"
+              >
+                <option value="CUARENTENA">Cuarentena Felina</option>
+                <option value="TTO_OCTUBRE">Con Tratamiento Médico Activo</option>
+                <option value="MATERNAS">Maternidades Felinas</option>
+                <option value="PATIOS">Patios de Adopción Gatera</option>
+              </select>
+            )}
+          </div>
+
+          {/* 7. Alertas de Bioseguridad */}
+          <div className="p-3.5 bg-amber-50/70 border border-amber-200 rounded-2xl space-y-2">
+            <span className="font-black text-amber-950 block text-[11px] uppercase tracking-wider flex items-center gap-1.5">
+              <ShieldAlert className="w-4 h-4 text-amber-600" /> Protocolo de Bioseguridad y Manejo:
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              {species === "perro" && (
+                <label className="flex items-center gap-2 p-2 bg-white rounded-xl border border-amber-200 cursor-pointer font-bold text-slate-800">
+                  <input
+                    type="checkbox"
+                    checked={isCDV}
+                    onChange={(e) => setIsCDV(e.target.checked)}
+                    className="w-4 h-4 rounded text-red-600 focus:ring-red-500"
+                  />
+                  <span className="text-[11px] text-red-700">☣️ Distemper (+)</span>
+                </label>
+              )}
+              <label className="flex items-center gap-2 p-2 bg-white rounded-xl border border-amber-200 cursor-pointer font-bold text-slate-800">
+                <input
+                  type="checkbox"
+                  checked={isFeral}
+                  onChange={(e) => setIsFeral(e.target.checked)}
+                  className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500"
+                />
+                <span className="text-[11px]">⚠️ Feral / Reactivo</span>
+              </label>
+              <label className="flex items-center gap-2 p-2 bg-white rounded-xl border border-amber-200 cursor-pointer font-bold text-slate-800">
+                <input
+                  type="checkbox"
+                  checked={isCuarentena}
+                  onChange={(e) => setIsCuarentena(e.target.checked)}
+                  className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500"
+                />
+                <span className="text-[11px]">🛑 Cuarentena</span>
+              </label>
+            </div>
+          </div>
+
+          {/* 8. Tratamiento Inicial / Kardex Opcional */}
+          <div className="p-3.5 bg-indigo-50/70 border border-indigo-200 rounded-2xl space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="font-black text-indigo-950 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
+                <Pill className="w-4 h-4 text-indigo-600" /> ¿Tiene Medicación Prescrita?
+              </span>
+              <button
+                type="button"
+                onClick={() => setHasTreatment(!hasTreatment)}
+                className={`px-3 py-1 rounded-xl font-bold text-[11px] transition-all ${
+                  hasTreatment ? "bg-indigo-600 text-white" : "bg-slate-200 text-slate-700"
+                }`}
+              >
+                {hasTreatment ? "SÍ (Prescribir)" : "NO"}
+              </button>
+            </div>
+
+            {hasTreatment && (
+              <div className="space-y-2 pt-1 border-t border-indigo-100 animate-in fade-in">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-0.5 text-[10px]">
+                    MEDICAMENTO Y DOSIFICACIÓN:
+                  </label>
+                  <input
+                    type="text"
+                    value={medication}
+                    onChange={(e) => setMedication(e.target.value)}
+                    placeholder="Ej: Amoxicilina 250mg c/12h con alimento"
+                    className="w-full p-2 bg-white border border-indigo-200 rounded-xl font-medium"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-0.5 text-[10px]">
+                      SISTEMA CLÍNICO:
+                    </label>
+                    <select
+                      value={system}
+                      onChange={(e) => setSystem(e.target.value)}
+                      className="w-full p-2 bg-white border border-indigo-200 rounded-xl font-medium"
+                    >
+                      <option value="PREVENTIVO">Preventivo / Resguardo</option>
+                      <option value="DERMATOLOGICO">Dermatológico</option>
+                      <option value="GASTROINTESTINAL">Gastrointestinal</option>
+                      <option value="RESPIRATORIO">Respiratorio</option>
+                      <option value="OFTALMOLOGICO">Oftalmológico</option>
+                      <option value="TRAUMATOLOGICO">Traumatológico</option>
+                      <option value="TEGUMEN">Tegumentario</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-0.5 text-[10px]">
+                      TOTAL DE DOSIS:
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={60}
+                      value={totalDoses}
+                      onChange={(e) => setTotalDoses(Number(e.target.value))}
+                      className="w-full p-2 bg-white border border-indigo-200 rounded-xl font-mono text-center font-bold"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 9. Desparasitación / Bravecto y Observaciones */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="font-bold text-slate-700 block mb-1 text-[10px] uppercase">
+                DESPARASITANTE / BRAVECTO:
+              </label>
+              <input
+                type="text"
+                value={bravecto}
+                onChange={(e) => setBravecto(e.target.value)}
+                placeholder="Ej: Bravecto 20-40kg, Al Día"
+                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-medium"
+              />
+            </div>
+            <div>
+              <label className="font-bold text-slate-700 block mb-1 text-[10px] uppercase">
+                ESTADO GENERAL:
+              </label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold"
+              >
+                <option value="activo">Activo / Estable</option>
+                <option value="cuarentena">Cuarentena Preventiva</option>
+                <option value="observacion">Bajo Observación</option>
+                <option value="critico">Cuidados Especiales</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="font-bold text-slate-700 block mb-1 text-[10px] uppercase">
+              OBSERVACIONES CLÍNICAS / DIETA / NOTAS DE INGRESO:
+            </label>
+            <textarea
+              rows={2}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Ej: Rescatado en Comuna 13. Presenta baja condición corporal, dieta blanda requerida..."
+              className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-medium"
+            />
+          </div>
+
+          {/* Botones de Acción */}
+          <div className="flex gap-2.5 pt-2 shrink-0">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isSubmitting}
+              className="w-1/3 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl text-xs transition-all"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-2/3 py-3.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black rounded-2xl text-xs shadow-lg shadow-emerald-600/25 flex items-center justify-center gap-2 transition-all"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              <span>{isSubmitting ? "GUARDANDO..." : "GUARDAR Y SUMAR A LA BASE DE DATOS"}</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
