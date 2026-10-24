@@ -23,7 +23,9 @@ import {
   XCircle,
   ChevronDown,
   ArrowUp,
+  Cloud,
 } from "lucide-react";
+import { isSupabaseConfigured, syncAllLocalToSupabase } from "@/lib/supabase";
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<"scanner" | "turnos" | "planilla" | "kardex" | "census">("scanner");
@@ -73,6 +75,11 @@ export default function Home() {
     // 1. Cargar datos 100% reales de los archivos Excel en IndexedDB y garantizar cero duplicados
     initializeDatabaseIfEmpty()
       .then(() => deduplicateDatabaseRecords())
+      .then(() => {
+        if (navigator.onLine && isSupabaseConfigured()) {
+          syncAllLocalToSupabase().catch(console.error);
+        }
+      })
       .catch(console.error);
 
     // 2. Detección de sesión y personal registrado dinámicamente
@@ -214,6 +221,17 @@ export default function Home() {
               <Link2 className="w-3.5 h-3.5" />
               <span>Link Mágico</span>
             </button>
+
+            {/* Estado Supabase Cloud */}
+            {isSupabaseConfigured() && (
+              <span
+                className="p-1.5 rounded-lg border bg-blue-500/20 text-blue-300 border-blue-500/30 flex items-center gap-1 text-[10px] font-bold"
+                title="Sincronización en la Nube Supabase Activa"
+              >
+                <Cloud className="w-3.5 h-3.5 text-blue-400" />
+                <span className="hidden xs:inline">Nube</span>
+              </span>
+            )}
 
             {/* Estado de Red */}
             <span
