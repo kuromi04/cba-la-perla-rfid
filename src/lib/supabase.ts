@@ -18,9 +18,13 @@ export function getSupabaseCredentials(): { url: string; key: string } {
   if (typeof window !== "undefined") {
     const localUrl = localStorage.getItem("cba_supabase_url");
     const localKey = localStorage.getItem("cba_supabase_anon_key");
-    if (localUrl) url = localUrl;
-    if (localKey) key = localKey;
+    if (localUrl && localUrl.trim().startsWith("http")) url = localUrl.trim();
+    if (localKey && localKey.trim().length > 15) key = localKey.trim();
   }
+
+  // Si por alguna razón la key está vacía o corrupta, forzar la oficial
+  if (!url || !url.startsWith("http")) url = DEFAULT_SUPABASE_URL;
+  if (!key || key.length < 15) key = DEFAULT_SUPABASE_KEY;
 
   return { url: url.trim(), key: key.trim() };
 }

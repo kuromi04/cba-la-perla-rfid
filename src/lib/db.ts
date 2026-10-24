@@ -131,6 +131,7 @@ export interface ShiftTask {
   dosisTotales?: number;
   dosisAplicadas?: number;
   dosisFaltantes?: number;
+  scheduledDate?: string;
 }
 
 export interface AdministrationLog {
@@ -271,7 +272,7 @@ export async function initializeDatabaseIfEmpty(forceReset: boolean = false) {
         nroAnimal: cat.nroAnimal,
         microchip: chip,
         shortChip: cat.shortChip,
-        name: cat.nombre,
+        name: cat.color ? `FELINO ${cat.color}` : (cat.nombre || "FELINO"),
         species: "gato",
         breed: cat.raza || "DPC",
         gender: cat.sexo,
@@ -332,11 +333,13 @@ export async function initializeDatabaseIfEmpty(forceReset: boolean = false) {
     }
   }
 
-  await db.animals.bulkAdd(animalsToInsert);
-  await db.kardex.bulkAdd(kardexToInsert);
-
-  await db.animals.bulkAdd(animalsToInsert);
-  await db.kardex.bulkAdd(kardexToInsert);
+  // Inserción segura sin duplicados
+  for (const a of animalsToInsert) {
+    await db.animals.put(a).catch(() => {});
+  }
+  for (const k of kardexToInsert) {
+    await db.kardex.put(k).catch(() => {});
+  }
 
   // Regla de Oro: Desduplicación garantizada en todas las tablas
   await deduplicateDatabaseRecords();
@@ -385,13 +388,13 @@ export async function searchAnimalSmart(query: string): Promise<Animal | null> {
     return {
       microchip: cat.microchip,
       shortChip: cat.shortChip,
-      name: cat.nombre,
+      name: cat.color ? `FELINO ${cat.color}` : (cat.nombre || "FELINO"),
       species: "gato",
-      breed: `${cat.raza} - ${cat.color}`,
+      breed: cat.raza || "DPC",
       gender: cat.sexo,
       location: cat.ubicacion,
       status: "activo",
-      notes: `${cat.pendientes}. HC: ${cat.hc}`,
+      notes: `${cat.pendientes || ""}. HC: ${cat.hc || ""}`,
       hc: cat.hc,
       isFeral: cat.isFeral,
       color: cat.color,

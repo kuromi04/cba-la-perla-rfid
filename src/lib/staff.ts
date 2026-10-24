@@ -106,10 +106,13 @@ export async function getAllStaff(): Promise<StaffMember[]> {
       cloudMap.forEach((s, id) => staffMap.set(id, s));
       list = Array.from(staffMap.values());
 
-      // Cachear en Dexie para disponibilidad offline
+      // Cachear en Dexie y localStorage para disponibilidad offline
       for (const s of list) {
         await db.staff.put(s).catch(() => {});
       }
+      try {
+        localStorage.setItem("cba_laperla_staff_list", JSON.stringify(list));
+      } catch {}
     } catch (err) {
       console.warn("Supabase staff sync non-blocking error:", err);
     }

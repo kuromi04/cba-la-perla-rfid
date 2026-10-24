@@ -170,9 +170,16 @@ export default function Home() {
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
 
+    const staffTimer = setInterval(() => {
+      if (navigator.onLine) {
+        getAllStaff().catch(() => {});
+      }
+    }, 15000);
+
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
+      clearInterval(staffTimer);
     };
   }, []);
 

@@ -20,6 +20,8 @@ import {
   QrCode,
   ShieldAlert,
   PlusCircle,
+  Stethoscope,
+  X,
 } from "lucide-react";
 import { VoiceModal } from "./VoiceModal";
 import { AssignAnimalModal } from "./AssignAnimalModal";
@@ -58,6 +60,15 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
   const [editMedication, setEditMedication] = useState("");
   const [editPendientes, setEditPendientes] = useState("");
   const [locationsList, setLocationsList] = useState<string[]>(OFFICIAL_GATERA_LOCATIONS);
+
+  // Estados para Instaurar y Editar Tratamientos Clínicos Directamente en Ficha
+  const [isPrescribingTreatment, setIsPrescribingTreatment] = useState(false);
+  const [editingTreatmentId, setEditingTreatmentId] = useState<number | null>(null);
+  const [rxMedication, setRxMedication] = useState("");
+  const [rxSystem, setRxSystem] = useState("TEGUMEN");
+  const [rxDoses, setRxDoses] = useState<number>(7);
+  const [rxFrequency, setRxFrequency] = useState("SID");
+  const [rxPendientes, setRxPendientes] = useState("");
 
   useEffect(() => {
     getAllGateraLocations().then((locs) => {
@@ -185,14 +196,15 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
         const tempAnimal: Animal = {
           microchip: gateraMatch.microchip,
           shortChip: gateraMatch.shortChip,
-          name: gateraMatch.nombre,
+          name: gateraMatch.color ? `FELINO ${gateraMatch.color}` : gateraMatch.nombre,
           species: "gato",
-          breed: `${gateraMatch.raza} - ${gateraMatch.color}`,
+          breed: gateraMatch.raza || "DPC",
           gender: gateraMatch.sexo,
           location: gateraMatch.ubicacion,
           status: "activo",
           hc: gateraMatch.hc,
           isFeral: gateraMatch.isFeral,
+          color: gateraMatch.color,
         };
         setCurrentAnimal(tempAnimal);
         setShelterEntries([
@@ -200,13 +212,16 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
             ubicacion: gateraMatch.ubicacion,
             microchip: gateraMatch.microchip,
             shortChip: gateraMatch.shortChip,
-            descripcion: `${gateraMatch.nombre} (${gateraMatch.raza})`,
+            descripcion: `${tempAnimal.name} (${gateraMatch.raza})`,
             medicacion: gateraMatch.medicacion,
             section: "GATERA" as any,
             pendientes: `HC: ${gateraMatch.hc}. ${gateraMatch.pendientes || ""}`,
             sistema: gateraMatch.sistema,
+            tipo: gateraMatch.tipo,
           },
         ]);
+        const treats = await db.kardex.where("microchip").equals(gateraMatch.microchip).toArray();
+        setAnimalTreatments(treats);
         setNotFound(false);
         setEditLocation(gateraMatch.ubicacion);
         setEditMedication(gateraMatch.medicacion || "");
@@ -469,6 +484,171 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
     }
   };
 
+  const handleOpenNewTreatment = () => {
+    setIsPrescribingTreatment(true);
+    setEditingTreatmentId(null);
+    setRxMedication("");
+    setRxSystem("TEGUMEN");
+    setRxDoses(7);
+    setRxFrequency("SID");
+    setRxPendientes(currentAnimal?.notes || "");
+  };
+
+  const handleOpenEditTreatment = (treat: KardexRecord) => {
+    setEditingTreatmentId(treat.id || 1);
+    setIsPrescribingTreatment(false);
+    setRxMedication(treat.treatment || "");
+    setRxSystem(treat.system || "TEGUMEN");
+    setRxDoses(treat.dosisTotales || 7);
+    setRxFrequency(treat.tipo || "SID");
+    setRxPendientes(treat.pendientes || "");
+  };
+
+  const handleOpenEditShelterEntry = () => {
+    const entry = shelterEntries[0];
+    setEditingTreatmentId(1);
+    setIsPrescribingTreatment(false);
+    setRxMedication(entry?.medicacion || "");
+    setRxSystem(entry?.sistema || "TEGUMEN");
+    setRxDoses(7);
+    setRxFrequency(entry?.tipo || "SID");
+    setRxPendientes(entry?.pendientes || "");
+  };
+
+  const handleSavePrescription = async (isEdit: boolean, existingKardexId?: number) => {
+    if (!currentAnimal) return;
+    const isVetOrAdmin = currentUser?.role === "veterinario" || currentUser?.role === "admin";
+    if (!isVetOrAdmin) {
+      setFeedbackMessage("⛔ Regla de Oro: Solo Médicos Veterinarios y Administradores tienen autorización para instaurar o editar tratamientos.");
+      return;
+    }
+    if (!rxMedication.trim()) {
+      alert("Por favor ingresa o selecciona la medicación prescrita.");
+      return;
+    }
+
+    const cleanChip = currentAnimal.microchip.trim();
+    const shortChip = currentAnimal.shortChip || cleanChip.slice(-7);
+    const nowIso = new Date().toISOString();
+    const todayDate = nowIso.split("T")[0];
+    const totalDoses = rxDoses > 0 ? rxDoses : 7;
+    const prescriber = currentUser ? currentUser.name : "Médico Veterinario Gatera";
+
+    if (isEdit && existingKardexId) {
+      const existing = await db.kardex.get(existingKardexId);
+      const applied = existing?.dosisAplicadas || 0;
+      const missing = Math.max(0, totalDoses - applied);
+
+      await db.kardex.update(existingKardexId, {
+        treatment: rxMedication.trim(),
+        system: rxSystem,
+        tipo: rxFrequency,
+        pendientes: rxPendientes.trim(),
+        dosisTotales: totalDoses,
+        dosisFaltantes: missing,
+        status: missing === 0 ? "finalizado" : "activo",
+      });
+
+      const task = await db.shiftTasks.where("kardexId").equals(existingKardexId).first();
+      if (task?.id) {
+        await db.shiftTasks.update(task.id, {
+          medication: rxMedication.trim(),
+          dosisTotales: totalDoses,
+          dosisFaltantes: missing,
+          notes: rxPendientes.trim(),
+        });
+      }
+
+      setFeedbackMessage(`✅ Tratamiento actualizado con éxito para ${currentAnimal.name}`);
+    } else {
+      const newKardexId = await db.kardex.add({
+        microchip: cleanChip,
+        shortChip,
+        system: rxSystem,
+        treatment: rxMedication.trim(),
+        description: `Gatera [${currentAnimal.location}]. HC: ${currentAnimal.hc || ""}. ${rxPendientes.trim()}`,
+        startDate: todayDate,
+        endDate: "HNI",
+        status: "activo",
+        prescribedBy: prescriber,
+        createdAt: nowIso,
+        tipo: rxFrequency,
+        pendientes: rxPendientes.trim(),
+        section: "GATERA_CENSO",
+        area: "gatera",
+        dosisTotales: totalDoses,
+        dosisAplicadas: 0,
+        dosisFaltantes: totalDoses,
+      });
+
+      await db.shiftTasks.add({
+        microchip: cleanChip,
+        animalName: currentAnimal.name,
+        location: currentAnimal.location,
+        species: "gato",
+        laborType: "medicacion",
+        shift: "mañana",
+        isCompleted: false,
+        medication: rxMedication.trim(),
+        scheduledDate: todayDate,
+        area: "gatera",
+        kardexId: Number(newKardexId),
+        dosisTotales: totalDoses,
+        dosisAplicadas: 0,
+        dosisFaltantes: totalDoses,
+        isFeral: currentAnimal.isFeral,
+        notes: rxPendientes.trim(),
+      });
+
+      setFeedbackMessage(`💊 Tratamiento instaurado con éxito para ${currentAnimal.name} (${totalDoses} dosis programadas)`);
+    }
+
+    const cat = await db.gateraRecords.where("microchip").equals(cleanChip).first();
+    if (cat?.id) {
+      await db.gateraRecords.update(cat.id, {
+        medicacion: rxMedication.trim(),
+        sistema: rxSystem,
+        tipo: rxFrequency,
+        pendientes: rxPendientes.trim(),
+        requiereSeguimiento: "SI",
+        tipoSeguimiento: "TRATAMIENTO",
+      });
+    }
+
+    const anim = await db.animals.where("microchip").equals(cleanChip).first();
+    if (anim?.id) {
+      await db.animals.update(anim.id, {
+        observacionesMedicas: rxPendientes.trim(),
+        notes: `${rxMedication.trim()}. ${rxPendientes.trim()}`,
+        requiereSeguimiento: "SI",
+        tipoSeguimiento: "TRATAMIENTO",
+      });
+    }
+
+    const updatedTreatments = await db.kardex.where("microchip").equals(cleanChip).toArray();
+    setAnimalTreatments(updatedTreatments);
+    setShelterEntries([
+      {
+        ubicacion: currentAnimal.location,
+        microchip: cleanChip,
+        shortChip,
+        descripcion: currentAnimal.name,
+        medicacion: rxMedication.trim(),
+        section: "GATERA" as any,
+        pendientes: rxPendientes.trim(),
+        sistema: rxSystem,
+        tipo: rxFrequency,
+      },
+    ]);
+
+    setIsPrescribingTreatment(false);
+    setEditingTreatmentId(null);
+
+    if (typeof window !== "undefined" && "vibrate" in navigator) {
+      navigator.vibrate([100, 50, 100]);
+    }
+  };
+
   const handleApplyVoiceIntent = async (intent: ParsedClinicalIntent) => {
     if (!currentAnimal) return;
 
@@ -667,11 +847,15 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
             );
           })()}
 
-          {/* Encabezado Animal */}
+          {/* Encabezado Animal con Color Oficial Columna H */}
           <div className="flex items-start justify-between gap-4">
             <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-2xl font-black text-slate-900">{currentAnimal.name}</h2>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-2xl font-black text-slate-900 leading-tight">
+                  {currentAnimal.species === "gato"
+                    ? (currentAnimal.color || currentAnimal.name)
+                    : currentAnimal.name}
+                </h2>
                 <span
                   className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase ${
                     currentAnimal.species === "gato"
@@ -687,10 +871,25 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
                   </span>
                 )}
               </div>
-              <p className="text-xs font-mono text-slate-500 mt-0.5 tracking-wider">
-                Chip: <strong>{currentAnimal.shortChip || currentAnimal.microchip}</strong>
-              </p>
-              <p className="text-xs text-slate-700 font-medium mt-1">{currentAnimal.breed}</p>
+
+              {/* Fila de Microchip, Raza y Color Oficial Destacado */}
+              <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                <span className="text-xs font-mono text-slate-500 tracking-wider">
+                  Chip: <strong>{currentAnimal.shortChip || currentAnimal.microchip}</strong>
+                </span>
+                <span className="text-slate-300">•</span>
+                <span className="text-xs text-slate-700 font-semibold">
+                  Raza: <strong>{currentAnimal.breed || "DPC"}</strong>
+                </span>
+                {(currentAnimal.color || currentAnimal.species === "gato") && (
+                  <>
+                    <span className="text-slate-300">•</span>
+                    <span className="text-xs font-black text-purple-900 bg-purple-100 border border-purple-200 px-2 py-0.5 rounded-lg inline-flex items-center gap-1 shadow-xs">
+                      🎨 Color Oficial (Col. H): {currentAnimal.color || "DPC"}
+                    </span>
+                  </>
+                )}
+              </div>
               {currentAnimal.species === "gato" && currentAnimal.retroviralStatus && currentAnimal.retroviralStatus !== "PENDIENTE" && (
                 <div className="mt-1.5 flex items-center gap-1.5">
                   <span
@@ -725,20 +924,203 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
             </div>
           </div>
 
-          {/* Información Clínica de la Planilla Real */}
-          <div className="space-y-2">
-            {shelterEntries.length > 0 ? (
+          {/* GESTIÓN CLÍNICA: INSTAURAR Y EDITAR TRATAMIENTO DIRECTAMENTE EN FICHA */}
+          <div className="space-y-3 pt-1">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black uppercase text-slate-800 flex items-center gap-1.5">
+                <Pill className="w-4 h-4 text-indigo-600" /> Prescripción y Tratamiento Médico
+              </span>
+              {(currentUser?.role === "veterinario" || currentUser?.role === "admin") && !isPrescribingTreatment && editingTreatmentId === null && (
+                <button
+                  type="button"
+                  onClick={handleOpenNewTreatment}
+                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center gap-1 shadow-xs active:scale-95 transition-all"
+                >
+                  <PlusCircle className="w-3.5 h-3.5" />
+                  <span>➕ Instaurar Tratamiento</span>
+                </button>
+              )}
+            </div>
+
+            {/* FORMULARIO INLINE PARA INSTAURAR O EDITAR TRATAMIENTO */}
+            {(isPrescribingTreatment || editingTreatmentId !== null) && (
+              <div className="p-4 bg-indigo-50/90 border-2 border-indigo-300 rounded-3xl space-y-3 animate-in zoom-in-95 shadow-sm text-xs">
+                <div className="flex items-center justify-between border-b border-indigo-200/60 pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 bg-indigo-600 text-white rounded-lg">
+                      <Stethoscope className="w-4 h-4" />
+                    </span>
+                    <div>
+                      <h4 className="font-black text-indigo-950 text-sm">
+                        {isPrescribingTreatment ? "Instaurar Nuevo Tratamiento Clínico" : "Editar Tratamiento Activo"}
+                      </h4>
+                      <p className="text-[11px] text-indigo-700 font-medium">
+                        Prescripción oficial de Gatera • Sincronización en Kardex, Turnos y Planilla
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsPrescribingTreatment(false);
+                      setEditingTreatmentId(null);
+                    }}
+                    className="p-1 hover:bg-indigo-200/60 rounded-lg text-indigo-800 transition-all"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Medicación prescrita */}
+                <div>
+                  <label className="font-black text-slate-800 block mb-1">
+                    Medicación Prescrita / Fármacos:
+                  </label>
+                  <input
+                    type="text"
+                    value={rxMedication}
+                    onChange={(e) => setRxMedication(e.target.value)}
+                    placeholder="Ej. AMOXISOL - MELOXICAM - EDO ATP..."
+                    className="w-full p-2.5 bg-white border border-indigo-300 rounded-xl font-bold uppercase text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  />
+                  {/* Pastillas rápidas de fármacos comunes */}
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    {["AMOXISOL", "EDO ATP", "INMULL", "ATRIBEN", "MELOXICAM", "ENROFLOXACINA", "METRONIDAZOL", "DOXICICLINA", "TRAMADOL", "KETOPROFENO"].map((drug) => (
+                      <button
+                        key={drug}
+                        type="button"
+                        onClick={() => {
+                          if (rxMedication.includes(drug)) return;
+                          setRxMedication(rxMedication ? `${rxMedication} - ${drug}` : drug);
+                        }}
+                        className="px-2 py-0.5 bg-white hover:bg-indigo-100 border border-indigo-200 rounded-md text-[10px] font-bold text-indigo-900 transition-all active:scale-95"
+                      >
+                        + {drug}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  {/* Sistema Afectado */}
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Sistema Clínico:</label>
+                    <select
+                      value={rxSystem}
+                      onChange={(e) => setRxSystem(e.target.value)}
+                      className="w-full p-2 bg-white border border-indigo-300 rounded-xl font-bold text-slate-800"
+                    >
+                      <option value="TEGUMEN">TEGUMEN (Piel / Heridas)</option>
+                      <option value="RESPIRATORIO">RESPIRATORIO (Gripe / Tos)</option>
+                      <option value="DIGESTIVO">DIGESTIVO (Gastroenteritis)</option>
+                      <option value="MUSCULOESQUELÉTICO">MUSCULOESQUELÉTICO (Trauma)</option>
+                      <option value="ÓTICO / OFTÁLMICO">ÓTICO / OFTÁLMICO</option>
+                      <option value="URINARIO">URINARIO (FLUTD / Renal)</option>
+                      <option value="NERVIOSO">NERVIOSO</option>
+                      <option value="PLAN SANITARIO">PLAN SANITARIO</option>
+                      <option value="GENERAL">GENERAL / OTRO</option>
+                    </select>
+                  </div>
+
+                  {/* Frecuencia / Horario */}
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Frecuencia:</label>
+                    <select
+                      value={rxFrequency}
+                      onChange={(e) => setRxFrequency(e.target.value)}
+                      className="w-full p-2 bg-white border border-indigo-300 rounded-xl font-bold text-slate-800"
+                    >
+                      <option value="SID">SID (Cada 24 horas)</option>
+                      <option value="BID">BID (Cada 12 horas)</option>
+                      <option value="TID">TID (Cada 8 horas)</option>
+                      <option value="CADA 48 HORAS">Cada 48 Horas</option>
+                      <option value="DOSIS ÚNICA">Dosis Única</option>
+                      <option value="S">S (Según evolución médica)</option>
+                    </select>
+                  </div>
+
+                  {/* Dosis Totales */}
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Total de Dosis:</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={60}
+                      value={rxDoses}
+                      onChange={(e) => setRxDoses(Number(e.target.value) || 1)}
+                      className="w-full p-2 bg-white border border-indigo-300 rounded-xl font-black text-slate-800 text-center"
+                    />
+                  </div>
+                </div>
+
+                {/* Pendientes / Diagnóstico */}
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">
+                    Diagnóstico Clínico / Pendientes:
+                  </label>
+                  <input
+                    type="text"
+                    value={rxPendientes}
+                    onChange={(e) => setRxPendientes(e.target.value)}
+                    placeholder="Ej. GINGIVITIS - HERIDA EN MIEMBRO POSTERIOR..."
+                    className="w-full p-2.5 bg-white border border-indigo-300 rounded-xl text-slate-900"
+                  />
+                </div>
+
+                {/* Botones de acción */}
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsPrescribingTreatment(false);
+                      setEditingTreatmentId(null);
+                    }}
+                    className="w-1/2 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl font-bold transition-all"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSavePrescription(editingTreatmentId !== null, editingTreatmentId || undefined)}
+                    className="w-1/2 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl font-black flex items-center justify-center gap-1.5 shadow-md transition-all"
+                  >
+                    <Save className="w-4 h-4" />
+                    <span>{editingTreatmentId !== null ? "Guardar Cambios" : "Instaurar Tratamiento"}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Listado de Tratamientos Existentes */}
+            {shelterEntries.length > 0 && shelterEntries.some((e) => e.medicacion && e.medicacion !== "Ninguno") ? (
               shelterEntries.map((entry, idx) => (
                 <div key={idx} className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-black uppercase tracking-wider text-indigo-700">
                       [{entry.section}] {entry.sistema ? `• ${entry.sistema}` : ""}
                     </span>
-                    {entry.tipo && (
-                      <span className="px-2 py-0.5 bg-slate-200 text-slate-700 rounded text-[10px] font-bold">
-                        Frecuencia: {entry.tipo}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1.5">
+                      {entry.tipo && (
+                        <span className="px-2 py-0.5 bg-slate-200 text-slate-700 rounded text-[10px] font-bold">
+                          {entry.tipo}
+                        </span>
+                      )}
+                      {(currentUser?.role === "veterinario" || currentUser?.role === "admin") && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const matchKardex = animalTreatments[idx] || animalTreatments[0];
+                            if (matchKardex?.id) handleOpenEditTreatment(matchKardex);
+                            else handleOpenEditShelterEntry();
+                          }}
+                          className="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded text-[11px] font-black flex items-center gap-1 transition-all active:scale-95"
+                          title="Editar este tratamiento"
+                        >
+                          <Edit3 className="w-3 h-3" />
+                          <span>Editar</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {entry.medicacion && (
@@ -749,16 +1131,6 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
                   )}
 
                   <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 pt-1">
-                    {entry.fechaFinal && (
-                      <span>
-                        Fecha Fin: <strong>{entry.fechaFinal}</strong>
-                      </span>
-                    )}
-                    {entry.dosisBravecto && (
-                      <span className="text-amber-800 font-bold bg-amber-100 px-2 py-0.5 rounded">
-                        Bravecto Dosis: {entry.dosisBravecto}
-                      </span>
-                    )}
                     {entry.pendientes && (
                       <span className="text-red-700 font-bold bg-red-100 px-2.5 py-0.5 rounded-full">
                         Pendiente: {entry.pendientes}
@@ -768,9 +1140,24 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
                 </div>
               ))
             ) : (
-              <div className="p-3 bg-slate-50 rounded-2xl text-xs text-slate-500">
-                Sin medicación activa registrada en la planilla.
-              </div>
+              !isPrescribingTreatment && (
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                  <div className="text-slate-500">
+                    <span className="font-bold text-slate-700 block">Sin tratamiento activo registrado</span>
+                    <span>Este felino no tiene medicación asignada actualmente.</span>
+                  </div>
+                  {(currentUser?.role === "veterinario" || currentUser?.role === "admin") && (
+                    <button
+                      type="button"
+                      onClick={handleOpenNewTreatment}
+                      className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black rounded-xl flex items-center gap-1.5 shadow-sm transition-all shrink-0"
+                    >
+                      <PlusCircle className="w-4 h-4" />
+                      <span>➕ Instaurar Tratamiento Ahora</span>
+                    </button>
+                  )}
+                </div>
+              )
             )}
           </div>
 

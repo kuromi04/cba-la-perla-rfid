@@ -335,7 +335,7 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
 
       // 4. Si tiene tratamiento activo prescrito por Médico/Admin, registrarlo en el Kardex
       if (hasTreatment && medicacion.trim()) {
-        await db.kardex.add({
+        const kardexId = await db.kardex.add({
           microchip: cleanChip,
           shortChip,
           system: sistema,
@@ -351,6 +351,28 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
           dosisAplicadas: 0,
           dosisFaltantes: Number(totalDoses) || 7,
         });
+
+        // Crear tarea de turno para que los auxiliares/operarios puedan administrarlo hoy
+        if (formattedLocation !== "FALLECIDO") {
+          await db.shiftTasks.add({
+            microchip: cleanChip,
+            animalName: finalAnimal.name,
+            location: formattedLocation,
+            species: "gato",
+            laborType: "medicacion",
+            shift: "mañana",
+            isCompleted: false,
+            medication: medicacion.trim(),
+            scheduledDate: nowIso.split("T")[0],
+            area: "gatera",
+            kardexId: Number(kardexId),
+            dosisTotales: Number(totalDoses) || 7,
+            dosisAplicadas: 0,
+            dosisFaltantes: Number(totalDoses) || 7,
+            isFeral,
+            notes: compiledNotes || "Prescripción de ingreso",
+          });
+        }
       }
 
       // Feedback háptico
