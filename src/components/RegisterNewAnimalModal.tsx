@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
 import { db, Animal } from "@/lib/db";
+import { GateraCat } from "@/lib/gateraData";
 import { StaffMember, canEditAnimals } from "@/lib/staff";
 import {
   X,
@@ -13,6 +14,8 @@ import {
   FileSpreadsheet,
   ArrowUp,
   Sparkles,
+  Stethoscope,
+  Scissors,
 } from "lucide-react";
 
 interface RegisterNewAnimalModalProps {
@@ -28,40 +31,43 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
   isOpen,
   onClose,
   initialMicrochip,
-  defaultArea = "ambas",
   currentUser,
   onAnimalRegistered,
 }) => {
-  const initialSpecies =
-    defaultArea === "gatera" || currentUser?.area === "gatera" ? "gato" : "perro";
-
-  const [species, setSpecies] = useState<"perro" | "gato">(initialSpecies);
   const [microchip, setMicrochip] = useState(initialMicrochip);
-  const [name, setName] = useState("");
-  const [location, setLocation] = useState(""); // Columna B del Censo: Nº CANIL / JAULA
-  const [hc, setHc] = useState("");
-  const [breed, setBreed] = useState(initialSpecies === "gato" ? "Común Europeo" : "Mestizo");
-  const [color, setColor] = useState("");
-  const [gender, setGender] = useState<"Macho" | "Hembra">("Macho");
-  const [age, setAge] = useState("Adulto");
-  const [status, setStatus] = useState("activo");
-
-  // Bioseguridad
-  const [isCDV, setIsCDV] = useState(false);
-  const [isFeral, setIsFeral] = useState(false);
-  const [isCuarentena, setIsCuarentena] = useState(false);
-
-  // Tratamiento opcional al ingreso
+  const [location, setLocation] = useState(""); // Columna B: Nº CANIL / JAULA
+  const [hc, setHc] = useState(""); // Columna 3: HISTORIA CLINICA
+  const [sexoCode, setSexoCode] = useState<"HFA" | "MFA" | "HFC" | "MFC">("MFA"); // Columna 4: A
+  const [raza, setRaza] = useState("DPC"); // Columna 5: RAZA
+  const [isFeral, setIsFeral] = useState(false); // Columna 6: FERALES (SI/NO)
+  const [color, setColor] = useState(""); // Columna 7: COLOR
+  const [tipoIngreso, setTipoIngreso] = useState("RES"); // Columna 8: TIPO DE INGRESO
+  const [name, setName] = useState(""); // Nombre del felino (opcional)
+  const [fechaNacimiento, setFechaNacimiento] = useState("");
+  const [edadMeses, setEdadMeses] = useState("24 MESES"); // Columna 10
+  const [fechaIngreso, setFechaIngreso] = useState(() => new Date().toISOString().split("T")[0]); // Columna 11
+  const [condicionCorporal, setCondicionCorporal] = useState("RANGO 3.0/5"); // Columna 12
+  const [estadoSalud, setEstadoSalud] = useState("Saludable"); // Columna 13: Saludable, Regular, Delicado
+  
+  // Tratamiento & Clínica (Columnas 14, 15, 16, 17, 18)
   const [hasTreatment, setHasTreatment] = useState(false);
-  const [medication, setMedication] = useState("");
-  const [system, setSystem] = useState("PREVENTIVO");
+  const [medicacion, setMedicacion] = useState("");
+  const [observacionesMedicas, setObservacionesMedicas] = useState("");
+  const [requiereSeguimiento, setRequiereSeguimiento] = useState<"SI" | "NO">("NO");
+  const [tipoSeguimiento, setTipoSeguimiento] = useState("TRATAMIENTO");
+  const [sistema, setSistema] = useState("PREVENTIVO");
   const [totalDoses, setTotalDoses] = useState(7);
 
-  // Desparasitación: BRAVECTO ES EXCLUSIVO DE CANINOS
-  const [bravectoCanino, setBravectoCanino] = useState("1 dosis (Bravecto)");
+  // Aseo & Bienestar (Columnas 19, 20, 21, 22)
+  const [peluqueria, setPeluqueria] = useState("NO");
+  const [corteUnas, setCorteUnas] = useState("NO");
+  const [limpiezaOidos, setLimpiezaOidos] = useState("NO");
 
-  // Observaciones
-  const [notes, setNotes] = useState("");
+  // Médico Veterinario (Columna 23)
+  const [medicoVeterinario, setMedicoVeterinario] = useState(
+    currentUser?.name ? `Dr. ${currentUser.name}` : "Dra. Jenny Zapata Calle"
+  );
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -72,15 +78,6 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
       setMicrochip(initialMicrochip.trim());
     }
   }, [initialMicrochip]);
-
-  useEffect(() => {
-    if (species === "gato") {
-      if (breed === "Mestizo") setBreed("Común Europeo");
-      setIsCDV(false); // CDV es exclusivo de caninos
-    } else if (species === "perro") {
-      if (breed === "Común Europeo") setBreed("Mestizo");
-    }
-  }, [species]);
 
   if (!isOpen) return null;
 
@@ -101,7 +98,7 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
       return;
     }
     if (!location.trim()) {
-      setErrorMessage("Por favor ingresa el Nº Canil o Ubicación (Columna B de la Hoja de Censo).");
+      setErrorMessage("Por favor ingresa la ubicación o Nº Canil/Jaula (Columna B de la Hoja de Censo).");
       scrollToTop();
       return;
     }
@@ -111,14 +108,14 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
     const existingAnimal = await db.animals.where("microchip").equals(cleanChip).first();
     if (existingAnimal && !isAuthorized) {
       setErrorMessage(
-        `⛔ Regla de Oro: El microchip ${cleanChip} ya está registrado en el sistema a nombre de ${existingAnimal.name || "S/N"} (${existingAnimal.location}). Solo Médicos Veterinarios y Administradores pueden modificar o editar animales existentes.`
+        `⛔ Regla de Oro: El microchip ${cleanChip} ya está registrado en el sistema a nombre de ${existingAnimal.name || "S/N"} (${existingAnimal.location}). Solo Médicos Veterinarios y Administradores pueden modificar animales existentes.`
       );
       scrollToTop();
       return;
     }
 
     // REGLA DE ORO: Solo médicos y admin pueden prescribir medicaciones
-    if (hasTreatment && medication.trim() && !isAuthorized) {
+    if (hasTreatment && medicacion.trim() && !isAuthorized) {
       setErrorMessage(
         `⛔ Regla de Oro: Solo Médicos Veterinarios y Administradores tienen autorización para prescribir tratamientos y medicaciones.`
       );
@@ -131,40 +128,41 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
     try {
       const shortChip = cleanChip.length > 7 ? cleanChip.slice(-7) : cleanChip;
       const formattedName = name.trim() ? name.trim().toUpperCase() : "S/N";
-      const formattedLocation = location.trim().toUpperCase(); // Columna B Censo
-      const formattedBreed = breed.trim().toUpperCase() || (species === "gato" ? "COMÚN" : "MESTIZO");
-      const formattedColor = color.trim().toUpperCase() || "ESTÁNDAR";
-      const formattedHc = hc.trim().toUpperCase();
+      const formattedLocation = location.trim().toUpperCase();
+      const formattedRaza = raza.trim().toUpperCase() || "DPC";
+      const formattedColor = color.trim().toUpperCase() || "COMÚN";
+      const formattedHc = hc.trim() ? hc.trim().toUpperCase() : shortChip.slice(-5);
+      const isFemale = sexoCode.startsWith("H");
+      const isAdult = sexoCode.endsWith("A");
+      const gender = isFemale ? "hembra" : "macho";
       const nowIso = new Date().toISOString();
 
-      let compiledNotes = notes.trim();
-      if (isCDV && species === "perro") {
-        compiledNotes = `[CDV POSITIVO] ${compiledNotes}`.trim();
-      }
-      if (isCuarentena) {
-        compiledNotes = `[CUARENTENA] ${compiledNotes}`.trim();
-      }
+      let compiledNotes = observacionesMedicas.trim();
       if (isFeral) {
-        compiledNotes = `[ANIMAL FERAL] ${compiledNotes}`.trim();
+        compiledNotes = `[ANIMAL FERAL - GUANTES OBLIGATORIOS] ${compiledNotes}`.trim();
       }
 
       // 1. Guardar o Actualizar en tabla central: db.animals
-      const existingAnimal = await db.animals.where("microchip").equals(cleanChip).first();
       const finalAnimal: Animal = {
         id: existingAnimal?.id,
         microchip: cleanChip,
         shortChip,
         name: formattedName !== "S/N" ? formattedName : (existingAnimal?.name || "S/N"),
-        species,
-        breed: `${formattedBreed} - ${formattedColor}`,
-        gender: gender.toLowerCase(),
+        species: "gato",
+        breed: `${formattedRaza} - ${formattedColor}`,
+        gender,
         location: formattedLocation,
-        status: isCuarentena ? "cuarentena" : status,
-        hc: formattedHc || existingAnimal?.hc || undefined,
-        isFeral: isFeral || existingAnimal?.isFeral || false,
+        status: estadoSalud.toLowerCase().includes("delicado") ? "cuarentena" : "activo",
+        hc: formattedHc,
+        isFeral,
         color: formattedColor,
         notes: compiledNotes || existingAnimal?.notes || undefined,
         lastCensusDate: nowIso,
+        sexoCode,
+        condicionCorporal,
+        observacionesMedicas: compiledNotes,
+        tipoSeguimiento: hasTreatment || requiereSeguimiento === "SI" ? tipoSeguimiento : undefined,
+        medicoVeterinario,
       };
 
       if (existingAnimal?.id) {
@@ -174,122 +172,93 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
         finalAnimal.id = newId;
       }
 
-      // 2. Guardar o Actualizar en la Planilla correspondiente según su ubicación y especie
-      if (species === "perro") {
-        let caninoSection = "TRIAJE";
-        if (isCDV) {
-          caninoSection = "CDV";
-        } else if (formattedLocation.includes("UCE")) {
-          caninoSection = "UCE";
-        } else if (formattedLocation.includes("NOCHE")) {
-          caninoSection = "NOCHE";
-        }
+      // 2. Guardar o Actualizar en la Planilla Maestra de Gatera (24 columnas)
+      const existingGatera = await db.gateraRecords.where("microchip").equals(cleanChip).first();
+      const gateraEntry: GateraCat = {
+        id: existingGatera?.id,
+        ubicacion: formattedLocation, // Columna B
+        microchip: cleanChip,
+        shortChip,
+        hc: formattedHc,
+        sexoCode,
+        sexo: gender,
+        grupoEdad: isAdult ? "adulto" : "cachorro",
+        raza: formattedRaza,
+        isFeral,
+        color: formattedColor,
+        tipoIngreso,
+        fechaNacimiento: fechaNacimiento || undefined,
+        edad: edadMeses || "24 MESES",
+        fechaIngreso: fechaIngreso || nowIso.split("T")[0],
+        condicionCorporal,
+        estadoSalud,
+        medicacion: hasTreatment ? medicacion.trim() : "Ninguno",
+        observacionesMedicas: compiledNotes,
+        requiereSeguimiento: hasTreatment || requiereSeguimiento === "SI" ? "SI" : "NO",
+        tipoSeguimiento: hasTreatment || requiereSeguimiento === "SI" ? tipoSeguimiento : "NO REQUIERE",
+        fechaSeguimiento: hasTreatment ? nowIso.split("T")[0] : undefined,
+        peluqueria,
+        corteUnas,
+        limpiezaOidos,
+        fechaAseo: (peluqueria === "SI" || corteUnas === "SI" || limpiezaOidos === "SI") ? nowIso.split("T")[0] : undefined,
+        medicoVeterinario,
+        nombre: formattedName,
+        descripcion: `${formattedName} (${formattedRaza} - ${formattedColor})`,
+        pendientes: compiledNotes || "INGRESO NUEVO GATERA",
+        sistema: hasTreatment ? sistema : "PREVENTIVO",
+        fechaFinal: hasTreatment ? `+${totalDoses} días` : "HNI",
+        tipo: "FS",
+        desparasitante: "AL DÍA (FELINO)",
+      };
 
-        const existingShelter = await db.shelterRecords.where("microchip").equals(cleanChip).first();
-        if (existingShelter?.id) {
-          await db.shelterRecords.update(existingShelter.id, {
-            section: caninoSection as any,
-            ubicacion: formattedLocation, // Columna B (Nº Canil)
-            shortChip,
-            descripcion: `${formattedName} (${formattedBreed} - ${formattedColor})`,
-            medicacion: hasTreatment ? medication.trim() : existingShelter.medicacion,
-            fechaFinal: hasTreatment ? `+${totalDoses} días` : existingShelter.fechaFinal,
-            tipo: "S",
-            sistema: hasTreatment ? system : existingShelter.sistema,
-            pendientes: compiledNotes || existingShelter.pendientes,
-            dosisBravecto: bravectoCanino.trim() || existingShelter.dosisBravecto,
-          });
-        } else {
-          await db.shelterRecords.add({
-            section: caninoSection as any,
-            ubicacion: formattedLocation, // Columna B (Nº Canil)
-            microchip: cleanChip,
-            shortChip,
-            descripcion: `${formattedName} (${formattedBreed} - ${formattedColor})`,
-            medicacion: hasTreatment ? medication.trim() : "",
-            fechaFinal: hasTreatment ? `+${totalDoses} días` : "HNI",
-            tipo: "S",
-            sistema: hasTreatment ? system : "PREVENTIVO",
-            pendientes: compiledNotes || "INGRESO NUEVO CANIL",
-            dosisBravecto: bravectoCanino.trim() || undefined,
-          });
-        }
+      if (existingGatera?.id) {
+        await db.gateraRecords.update(existingGatera.id, gateraEntry);
       } else {
-        // En Felinos (Gatera), Bravecto NUNCA se asigna
-        const existingGatera = await db.gateraRecords.where("microchip").equals(cleanChip).first();
-        if (existingGatera?.id) {
-          await db.gateraRecords.update(existingGatera.id, {
-            ubicacion: formattedLocation, // Columna B (Nº Canil / Jaula)
-            shortChip,
-            hc: formattedHc || existingGatera.hc || shortChip.slice(-5),
-            nombre: formattedName !== "S/N" ? formattedName : (existingGatera.nombre || "S/N"),
-            raza: formattedBreed,
-            color: formattedColor,
-            sexo: (gender.toLowerCase() === "hembra" ? "hembra" : "macho") as "macho" | "hembra",
-            edad: age,
-            isFeral: isFeral || existingGatera.isFeral || false,
-            condicionCorporal: existingGatera.condicionCorporal || "3/5",
-            estadoSalud: isCuarentena ? "CUARENTENA" : (existingGatera.estadoSalud || "ESTABLE"),
-            fechaFinal: hasTreatment ? `+${totalDoses} días` : existingGatera.fechaFinal,
-            tipo: "S",
-            descripcion: `${formattedName} (${formattedBreed} - ${formattedColor})`,
-            medicacion: hasTreatment ? medication.trim() : existingGatera.medicacion,
-            sistema: hasTreatment ? system : existingGatera.sistema,
-            pendientes: compiledNotes || existingGatera.pendientes,
-            desparasitante: "AL DÍA (FELINO)",
-          });
-        } else {
-          await db.gateraRecords.add({
-            ubicacion: formattedLocation, // Columna B (Nº Canil / Jaula)
-            microchip: cleanChip,
-            shortChip,
-            hc: formattedHc || shortChip.slice(-5),
-            nombre: formattedName,
-            raza: formattedBreed,
-            color: formattedColor,
-            sexo: (gender.toLowerCase() === "hembra" ? "hembra" : "macho") as "macho" | "hembra",
-            edad: age,
-            isFeral,
-            tipoIngreso: "RESGUARDO",
-            condicionCorporal: "3/5",
-            estadoSalud: isCuarentena ? "CUARENTENA" : "ESTABLE",
-            fechaFinal: hasTreatment ? `+${totalDoses} días` : "HNI",
-            tipo: "S",
-            descripcion: `${formattedName} (${formattedBreed} - ${formattedColor})`,
-            medicacion: hasTreatment ? medication.trim() : "",
-            sistema: hasTreatment ? system : "GENERAL",
-            pendientes: compiledNotes || "INGRESO NUEVO GATERA",
-            desparasitante: "AL DÍA (FELINO)",
-          });
-        }
+        await db.gateraRecords.add(gateraEntry);
       }
 
       // 3. Registrar o Actualizar en el Censo Automático
       const allCensus = await db.census.toArray();
-      const existingCensus = allCensus.find(
-        (c) => {
-          const itemChip = c.microchip.trim().toUpperCase();
-          return (
-            itemChip === cleanChip ||
-            (cleanChip.length >= 10 && cleanChip.endsWith(itemChip)) ||
-            (itemChip.length >= 10 && itemChip.endsWith(cleanChip))
-          );
-        }
-      );
+      const existingCensus = allCensus.find((c) => {
+        const itemChip = c.microchip.trim().toUpperCase();
+        return (
+          itemChip === cleanChip ||
+          (cleanChip.length >= 10 && cleanChip.endsWith(itemChip)) ||
+          (itemChip.length >= 10 && itemChip.endsWith(cleanChip))
+        );
+      });
+
+      const censusPayload = {
+        microchip: cleanChip,
+        animalName: formattedName,
+        species: "gato" as const,
+        location: formattedLocation,
+        scannedAt: nowIso,
+        scannedBy: currentUser?.name || "Operario Gatera",
+        treatmentCount: hasTreatment ? 1 : 0,
+        area: "gatera" as const,
+        hc: formattedHc,
+        sexoCode,
+        raza: formattedRaza,
+        isFeral,
+        color: formattedColor,
+        tipoIngreso,
+        edad: edadMeses,
+        condicionCorporal,
+        estadoSalud,
+        medicacion: hasTreatment ? medicacion.trim() : undefined,
+        observacionesMedicas: compiledNotes,
+        requiereSeguimiento: hasTreatment || requiereSeguimiento === "SI" ? "SI" : "NO",
+        tipoSeguimiento,
+        peluqueria,
+        corteUnas,
+        limpiezaOidos,
+        medicoVeterinario,
+      };
 
       if (existingCensus?.id) {
-        await db.census.update(existingCensus.id, {
-          microchip: cleanChip.length >= existingCensus.microchip.length ? cleanChip : existingCensus.microchip,
-          animalName: formattedName !== "S/N" ? formattedName : (existingCensus.animalName || "S/N"),
-          species,
-          location: formattedLocation,
-          scannedAt: nowIso,
-          scannedBy: currentUser?.name || "Operario de Campo",
-          treatmentCount: hasTreatment ? 1 : existingCensus.treatmentCount,
-          area: species === "gato" ? "gatera" : "caninos",
-        });
-
-        // Eliminar cualquier duplicado residual
+        await db.census.update(existingCensus.id, censusPayload);
+        // Depurar duplicados residuales
         const leftovers = allCensus.filter(
           (c) => c.id !== existingCensus.id && (c.microchip.trim().toUpperCase() === cleanChip || cleanChip.endsWith(c.microchip.trim().toUpperCase()))
         );
@@ -297,33 +266,23 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
           if (left.id) await db.census.delete(left.id);
         }
       } else {
-        await db.census.add({
-          microchip: cleanChip,
-          animalName: formattedName,
-          species,
-          location: formattedLocation,
-          scannedAt: nowIso,
-          scannedBy: currentUser?.name || "Operario de Campo",
-          treatmentCount: hasTreatment ? 1 : 0,
-          area: species === "gato" ? "gatera" : "caninos",
-        });
+        await db.census.add(censusPayload);
       }
 
-      // 4. Si tiene tratamiento activo, registrarlo en el Kardex Clínico
-      if (hasTreatment && medication.trim()) {
-        const vetName = currentUser?.name || "Médico Veterinario";
+      // 4. Si tiene tratamiento activo prescrito por Médico/Admin, registrarlo en el Kardex
+      if (hasTreatment && medicacion.trim()) {
         await db.kardex.add({
           microchip: cleanChip,
           shortChip,
-          system,
-          treatment: medication.trim(),
-          description: compiledNotes || "Prescripción al ingreso",
+          system: sistema,
+          treatment: medicacion.trim(),
+          description: compiledNotes || "Prescripción al ingreso en Gatera",
           startDate: nowIso.split("T")[0],
           endDate: new Date(Date.now() + totalDoses * 86400000).toISOString().split("T")[0],
           status: "activo",
-          prescribedBy: vetName,
+          prescribedBy: medicoVeterinario,
           createdAt: nowIso,
-          area: species === "gato" ? "gatera" : "caninos",
+          area: "gatera",
           dosisTotales: Number(totalDoses) || 7,
           dosisAplicadas: 0,
           dosisFaltantes: Number(totalDoses) || 7,
@@ -338,7 +297,7 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
       onAnimalRegistered(finalAnimal);
       onClose();
     } catch (err: any) {
-      console.error("Error al registrar nuevo animal:", err);
+      console.error("Error al registrar felino:", err);
       setErrorMessage(`Error al guardar: ${err?.message || "Error desconocido en base de datos"}`);
       scrollToTop();
     } finally {
@@ -348,27 +307,94 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm p-2 sm:p-4 flex items-center justify-center overscroll-contain">
+      {/* DATALISTS DINÁMICOS PARA AUTOCOMPLETADO RÁPIDO */}
+      <datalist id="locations-list">
+        <option value="CUARENTENA 1" />
+        <option value="CUARENTENA 2" />
+        <option value="CUARENTENA 3" />
+        <option value="CUARENTENA 4" />
+        <option value="CUARENTENA 5" />
+        <option value="CUARENTENA 6" />
+        <option value="CUARENTENA 7" />
+        <option value="CUARENTENA 8" />
+        <option value="PATIO 1" />
+        <option value="PATIO 2" />
+        <option value="PATIO 3" />
+        <option value="PATIO 4" />
+        <option value="PATIO 5" />
+        <option value="PATIO 6" />
+        <option value="PATIO 7" />
+        <option value="PATIO 8" />
+        <option value="PATIO 9" />
+        <option value="PATIO 10" />
+        <option value="PATIO VIF" />
+        <option value="MATERNIDAD 1" />
+        <option value="MATERNIDAD 2" />
+        <option value="MATERNIDAD 3" />
+        <option value="MATERNIDAD 4" />
+        <option value="HOSPITAL 1" />
+        <option value="HOSPITAL 2" />
+        <option value="JAULA AISLAMIENTO" />
+      </datalist>
+
+      <datalist id="colors-list">
+        <option value="NEGRO" />
+        <option value="BLANCO" />
+        <option value="ATIGRADO" />
+        <option value="ATIGRADO CON BLANCO" />
+        <option value="NEGRO CON BLANCO" />
+        <option value="ROMANO" />
+        <option value="NARANJA / AMARILLO" />
+        <option value="CAREY" />
+        <option value="CALICÓ" />
+        <option value="GRIS / AZUL RUSO" />
+        <option value="SIAMÉS" />
+      </datalist>
+
+      <datalist id="vets-list">
+        <option value="Dra. Jenny Zapata Calle" />
+        <option value="Dr. Juan Carlos Arango" />
+        <option value="Dra. Marcela Restrepo" />
+        <option value="Dr. Carlos Gómez" />
+      </datalist>
+
+      <datalist id="felinos-meds-list">
+        <option value="REVOLUTION PLUS (SELAMECTINA)" />
+        <option value="FELINE FULL SPOT" />
+        <option value="CONVENIA (CEFOVECINA)" />
+        <option value="DOXI 100MG C/24H" />
+        <option value="COLIRIO CIPROFLOXACINA C/8H" />
+        <option value="CAT BALANCE SUPL. NUTRICIONAL" />
+        <option value="MELOXICAM FELINO 0.1MG/KG" />
+        <option value="ENROFLOXACINA 50MG" />
+      </datalist>
+
       <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 my-auto flex flex-col max-h-[92dvh] sm:max-h-[90vh]">
         
         {/* Cabecera Fija del Modal */}
-        <div className="p-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800 shrink-0">
+        <div className="p-4 bg-purple-950 text-white flex items-center justify-between border-b border-purple-900 shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/30">
+            <div className="p-2 bg-purple-500/20 text-purple-300 rounded-xl border border-purple-500/30">
               <PlusCircle className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-black text-sm sm:text-base leading-tight">
-                Registrar Animal Nuevo en Sistema
-              </h3>
-              <p className="text-[11px] text-slate-400">
-                Se registrará en el Censo, en su Planilla oficial y en la base de datos
+              <div className="flex items-center gap-2">
+                <h3 className="font-black text-sm sm:text-base leading-tight">
+                  Nuevo Felino en Censo GATERA
+                </h3>
+                <span className="px-2 py-0.5 bg-purple-800 text-purple-200 rounded-md text-[10px] font-black">
+                  24 COLUMNAS
+                </span>
+              </div>
+              <p className="text-[11px] text-purple-300">
+                Se registrará en el Censo Maestro de GATERA y la base de datos oficial
               </p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-all"
+            className="p-1.5 text-purple-300 hover:text-white rounded-xl hover:bg-purple-900 transition-all"
             title="Cerrar"
           >
             <X className="w-5 h-5" />
@@ -388,43 +414,10 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
             </div>
           )}
 
-          {/* 1. UBICACIÓN EN CENSO: Caninos vs Gatera */}
-          <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-1.5">
-            <label className="font-black text-slate-800 uppercase tracking-wider block text-[11px]">
-              UBICACIÓN GENERAL EN CENSO:
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setSpecies("perro")}
-                className={`py-3 px-3 rounded-2xl font-black text-xs flex items-center justify-center gap-2 border-2 transition-all ${
-                  species === "perro"
-                    ? "bg-emerald-50 border-emerald-600 text-emerald-950 shadow-sm"
-                    : "bg-white border-slate-200 text-slate-600 hover:bg-slate-100"
-                }`}
-              >
-                <span className="text-xl">🐶</span>
-                <span className="leading-tight">CANINOS (Albergue)</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setSpecies("gato")}
-                className={`py-3 px-3 rounded-2xl font-black text-xs flex items-center justify-center gap-2 border-2 transition-all ${
-                  species === "gato"
-                    ? "bg-purple-50 border-purple-600 text-purple-950 shadow-sm"
-                    : "bg-white border-slate-200 text-slate-600 hover:bg-slate-100"
-                }`}
-              >
-                <span className="text-xl">🐱</span>
-                <span className="leading-tight">GATERA (Felinos)</span>
-              </button>
-            </div>
-          </div>
-
-          {/* 2. Microchip */}
-          <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl">
-            <label className="font-bold text-slate-600 block mb-1 text-[10px] uppercase tracking-wider">
-              NÚMERO DE MICROCHIP (LEÍDO CON W91A O MANUAL):
+          {/* 1. Microchip */}
+          <div className="p-3 bg-purple-50/70 border border-purple-200 rounded-2xl">
+            <label className="font-black text-purple-950 block mb-1 text-[11px] uppercase tracking-wider">
+              NÚMERO DE MICROCHIP (LEÍDO CON W91A O MANUAL): <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
@@ -432,35 +425,31 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
               value={microchip}
               onChange={(e) => setMicrochip(e.target.value)}
               placeholder="Ej: 991003003806096 o 3806096"
-              className="w-full p-2.5 font-mono text-sm font-black text-slate-900 bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500"
+              className="w-full p-2.5 font-mono text-sm font-black text-purple-950 bg-white border border-purple-300 rounded-xl focus:ring-2 focus:ring-purple-500 shadow-xs"
             />
           </div>
 
-          {/* 3. UBICACIÓN ESPECÍFICA (Nº CANIL / JAULA / COLUMNA B DE CENSO) */}
-          <div className="p-3.5 bg-indigo-50/70 border border-indigo-200 rounded-2xl space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="font-black text-indigo-950 block text-[11px] uppercase tracking-wide flex items-center gap-1.5">
-                <MapPin className="w-4 h-4 text-indigo-600" />
-                UBICACIÓN ESPECÍFICA (Nº CANIL / JAULA - COLUMNA B CENSO): <span className="text-red-500">*</span>
-              </label>
-            </div>
+          {/* 2. Columna B: Nº CANIL / JAULA / UBICACIÓN GATERA */}
+          <div className="p-3.5 bg-indigo-50/80 border border-indigo-200 rounded-2xl space-y-2">
+            <label className="font-black text-indigo-950 block text-[11px] uppercase tracking-wide flex items-center gap-1.5">
+              <MapPin className="w-4 h-4 text-indigo-600" />
+              UBICACIÓN EN GATERA (Nº CANIL / JAULA - COLUMNA B): <span className="text-red-500">*</span>
+            </label>
             
             <input
               type="text"
               required
+              list="locations-list"
               value={location}
               onChange={(e) => setLocation(e.target.value)}
-              placeholder={species === "gato" ? "Ej: CUARENTENA 1, CUARENTENA 2, MATERNIDAD 1..." : "Ej: CANIL 14, CANIL 2, PATIO 1, UCE 2, TRIAJE..."}
-              className="w-full p-2.5 bg-white border border-indigo-300 rounded-xl font-bold uppercase text-slate-900 focus:ring-2 focus:ring-indigo-500 shadow-sm"
+              placeholder="Ej: CUARENTENA 1, PATIO 2, MATERNIDAD 1, HOSPITAL..."
+              className="w-full p-2.5 bg-white border border-indigo-300 rounded-xl font-bold uppercase text-slate-900 focus:ring-2 focus:ring-indigo-500 shadow-xs"
             />
 
-            {/* Sugerencias Rápidas de Columna B según Área */}
+            {/* Atajos Rápidos */}
             <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
               <span className="text-[10px] text-indigo-700 font-bold">Rápido:</span>
-              {(species === "perro"
-                ? ["CANIL 1", "CANIL 2", "CANIL 3", "PATIO 1", "PATIO 2", "TRIAJE", "UCE", "CUARENTENA"]
-                : ["CUARENTENA 1", "CUARENTENA 2", "CUARENTENA 3", "MATERNIDAD 1", "MATERNIDAD 2", "PATIO GATERA"]
-              ).map((sug) => (
+              {["CUARENTENA 1", "CUARENTENA 2", "CUARENTENA 3", "PATIO 1", "PATIO 2", "PATIO VIF", "MATERNIDAD 1", "HOSPITAL 1"].map((sug) => (
                 <button
                   key={sug}
                   type="button"
@@ -473,20 +462,8 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
             </div>
           </div>
 
-          {/* 4. Nombre y Datos Físicos */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="font-black text-slate-800 block mb-1 text-[11px]">
-                NOMBRE DEL ANIMAL: <span className="text-slate-400 font-normal text-[10px]">(Opcional - S/N)</span>
-              </label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Ej: Max, Luna, o dejar vacío..."
-                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold uppercase focus:bg-white"
-              />
-            </div>
+          {/* 3. Historia Clínica (HC), Sexo Code (A) y Raza */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
             <div>
               <label className="font-bold text-slate-700 block mb-1 text-[10px] uppercase">
                 HISTORIA CLÍNICA (HC):
@@ -496,65 +473,50 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
                 value={hc}
                 onChange={(e) => setHc(e.target.value)}
                 placeholder="Ej: 24198"
-                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-mono font-bold"
+                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-mono font-bold text-slate-900"
               />
             </div>
-          </div>
-
-          {/* 5. Sexo, Edad y Raza */}
-          <div className="grid grid-cols-3 gap-2">
             <div>
-              <label className="font-bold text-slate-700 block mb-1 text-[10px] uppercase">
-                SEXO:
+              <label className="font-black text-purple-950 block mb-1 text-[10px] uppercase">
+                CÓDIGO SEXO (COLUMNA A):
               </label>
               <select
-                value={gender}
-                onChange={(e) => setGender(e.target.value as any)}
-                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold"
+                value={sexoCode}
+                onChange={(e) => setSexoCode(e.target.value as any)}
+                className="w-full p-2.5 bg-purple-50 border border-purple-300 rounded-xl font-black text-purple-950"
               >
-                <option value="Macho">Macho</option>
-                <option value="Hembra">Hembra</option>
+                <option value="MFA">MFA (Macho Adulto)</option>
+                <option value="HFA">HFA (Hembra Adulta)</option>
+                <option value="MFC">MFC (Macho Cachorro)</option>
+                <option value="HFC">HFC (Hembra Cachorra)</option>
               </select>
             </div>
             <div>
               <label className="font-bold text-slate-700 block mb-1 text-[10px] uppercase">
-                EDAD:
+                RAZA:
               </label>
               <input
                 type="text"
-                value={age}
-                onChange={(e) => setAge(e.target.value)}
-                placeholder="Ej: Adulto"
-                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold"
+                value={raza}
+                onChange={(e) => setRaza(e.target.value)}
+                placeholder="DPC, DPL, Siamés..."
+                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold uppercase text-slate-900"
               />
-            </div>
-            <div>
-              <label className="font-bold text-slate-700 block mb-1 text-[10px] uppercase">
-                ESTADO:
-              </label>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold text-emerald-800"
-              >
-                <option value="activo">Activo</option>
-                <option value="observacion">Observación</option>
-                <option value="cuarentena">Cuarentena</option>
-              </select>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* 4. Nombre Opcional, Color y Tipo de Ingreso */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
             <div>
               <label className="font-bold text-slate-700 block mb-1 text-[10px] uppercase">
-                RAZA / MESTIZAJE:
+                NOMBRE FELINO: <span className="text-slate-400 font-normal">(Opcional)</span>
               </label>
               <input
                 type="text"
-                value={breed}
-                onChange={(e) => setBreed(e.target.value)}
-                placeholder={species === "gato" ? "Ej: Común Europeo, Siamés" : "Ej: Mestizo, Criollo, Pitbull"}
-                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-medium"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Ej: Michi, Luna o S/N"
+                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold uppercase"
               />
             </div>
             <div>
@@ -563,76 +525,102 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
               </label>
               <input
                 type="text"
+                list="colors-list"
                 value={color}
                 onChange={(e) => setColor(e.target.value)}
-                placeholder="Ej: Negro y blanco, Atigrado, Café"
-                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-medium"
+                placeholder="Ej: Negro, Atigrado, Carey..."
+                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-medium uppercase"
               />
             </div>
-          </div>
-
-          {/* 6. Protocolo de Bioseguridad */}
-          <div className="p-3.5 bg-amber-50/70 border border-amber-200 rounded-2xl space-y-2">
-            <span className="font-black text-amber-950 block text-[11px] uppercase tracking-wider flex items-center gap-1.5">
-              <ShieldAlert className="w-4 h-4 text-amber-600" /> Bioseguridad & Manejo Cauteloso:
-            </span>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              {species === "perro" && (
-                <label className="flex items-center gap-2 p-2 bg-white rounded-xl border border-amber-200 cursor-pointer font-bold text-slate-800">
-                  <input
-                    type="checkbox"
-                    checked={isCDV}
-                    onChange={(e) => setIsCDV(e.target.checked)}
-                    className="w-4 h-4 rounded text-red-600 focus:ring-red-500"
-                  />
-                  <span className="text-[11px] text-red-700">☣️ Distemper CDV (+)</span>
-                </label>
-              )}
-              <label className="flex items-center gap-2 p-2 bg-white rounded-xl border border-amber-200 cursor-pointer font-bold text-slate-800">
-                <input
-                  type="checkbox"
-                  checked={isFeral}
-                  onChange={(e) => setIsFeral(e.target.checked)}
-                  className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500"
-                />
-                <span className="text-[11px]">⚠️ Feral / Reactivo</span>
+            <div>
+              <label className="font-bold text-slate-700 block mb-1 text-[10px] uppercase">
+                TIPO INGRESO:
               </label>
-              <label className="flex items-center gap-2 p-2 bg-white rounded-xl border border-amber-200 cursor-pointer font-bold text-slate-800">
-                <input
-                  type="checkbox"
-                  checked={isCuarentena}
-                  onChange={(e) => setIsCuarentena(e.target.checked)}
-                  className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500"
-                />
-                <span className="text-[11px]">🛑 Cuarentena</span>
-              </label>
+              <select
+                value={tipoIngreso}
+                onChange={(e) => setTipoIngreso(e.target.value)}
+                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold"
+              >
+                <option value="RES">RES (Resguardo)</option>
+                <option value="APM">APM (Atención Médica)</option>
+                <option value="INC">INC (Incautación)</option>
+                <option value="E Y D">E Y D (Entrega y Decomiso)</option>
+              </select>
             </div>
           </div>
 
-          {/* 7. DESPARASITACIÓN BRAVECTO (SOLO PARA CANINOS) */}
-          {species === "perro" && (
-            <div className="p-3.5 bg-amber-50 border-2 border-amber-300 rounded-2xl space-y-1.5 animate-in fade-in">
-              <label className="font-black text-amber-950 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
-                <Pill className="w-4 h-4 text-amber-600" /> Desparasitación Bravecto (Exclusivo Caninos):
+          {/* 5. Condición Corporal, Estado de Salud y Edad */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <div>
+              <label className="font-bold text-slate-700 block mb-1 text-[10px] uppercase">
+                CONDICIÓN CORPORAL:
+              </label>
+              <select
+                value={condicionCorporal}
+                onChange={(e) => setCondicionCorporal(e.target.value)}
+                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-900"
+              >
+                <option value="RANGO 1.0/5">RANGO 1.0/5 (Muy Caquéctico)</option>
+                <option value="RANGO 1.5/5">RANGO 1.5/5</option>
+                <option value="RANGO 2.0/5">RANGO 2.0/5 (Delgado)</option>
+                <option value="RANGO 2.5/5">RANGO 2.5/5</option>
+                <option value="RANGO 3.0/5">RANGO 3.0/5 (Ideal / Óptimo)</option>
+                <option value="RANGO 3.5/5">RANGO 3.5/5</option>
+                <option value="RANGO 4.0/5">RANGO 4.0/5 (Sobrepeso)</option>
+                <option value="RANGO 5.0/5">RANGO 5.0/5 (Obeso)</option>
+              </select>
+            </div>
+            <div>
+              <label className="font-bold text-slate-700 block mb-1 text-[10px] uppercase">
+                ESTADO CLÍNICO:
+              </label>
+              <select
+                value={estadoSalud}
+                onChange={(e) => setEstadoSalud(e.target.value)}
+                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-900"
+              >
+                <option value="Saludable">Saludable</option>
+                <option value="Regular">Regular</option>
+                <option value="Delicado">Delicado</option>
+              </select>
+            </div>
+            <div>
+              <label className="font-bold text-slate-700 block mb-1 text-[10px] uppercase">
+                EDAD APROX MESES:
               </label>
               <input
                 type="text"
-                value={bravectoCanino}
-                onChange={(e) => setBravectoCanino(e.target.value)}
-                placeholder="Ej: 1 dosis (Bravecto 20-40kg) o Al Día"
-                className="w-full p-2.5 bg-white border border-amber-300 rounded-xl font-bold text-amber-950 focus:ring-2 focus:ring-amber-500"
+                value={edadMeses}
+                onChange={(e) => setEdadMeses(e.target.value)}
+                placeholder="Ej: 24 MESES"
+                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-900"
               />
-              <span className="text-[10px] text-amber-700 block font-medium">
-                * Bravecto tiene vigencia de 90 días y solo aplica para la población canina.
-              </span>
             </div>
-          )}
+          </div>
 
-          {/* 8. Tratamiento Inicial / Kardex Opcional */}
+          {/* 6. Protocolo Bioseguridad FERAL (Alerta Amarilla/Roja) */}
+          <div className="p-3.5 bg-amber-50/80 border border-amber-300 rounded-2xl space-y-1.5">
+            <span className="font-black text-amber-950 block text-[11px] uppercase tracking-wider flex items-center gap-1.5">
+              <ShieldAlert className="w-4 h-4 text-amber-600" /> Manejo Etológico / Felino Feral (Columna 6 Censo):
+            </span>
+            <label className="flex items-center gap-2.5 p-2 bg-white rounded-xl border border-amber-200 cursor-pointer font-bold text-slate-800">
+              <input
+                type="checkbox"
+                checked={isFeral}
+                onChange={(e) => setIsFeral(e.target.checked)}
+                className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500"
+              />
+              <span className="text-[11px] text-amber-900">
+                ⚠️ ¿ES FELINO FERAL / REACTIVO? (Requiere contención con guantes de carnaza y toalla)
+              </span>
+            </label>
+          </div>
+
+          {/* 7. Tratamiento Inicial / Kardex Opcional */}
           <div className="p-3.5 bg-indigo-50/70 border border-indigo-200 rounded-2xl space-y-2">
             <div className="flex items-center justify-between">
               <span className="font-black text-indigo-950 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
-                <Pill className="w-4 h-4 text-indigo-600" /> ¿Tiene Medicación Prescrita al Ingreso?
+                <Pill className="w-4 h-4 text-indigo-600" /> Tratamiento / Medicación Prescrita (Columna 14)
               </span>
               <button
                 type="button"
@@ -646,16 +634,17 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
             </div>
 
             {hasTreatment && (
-              <div className="space-y-2 pt-1 border-t border-indigo-100 animate-in fade-in">
+              <div className="space-y-2.5 pt-1.5 border-t border-indigo-100 animate-in fade-in">
                 <div>
                   <label className="font-bold text-slate-700 block mb-0.5 text-[10px]">
-                    MEDICAMENTO Y DOSIFICACIÓN:
+                    FÁRMACO FELINO Y DOSIFICACIÓN:
                   </label>
                   <input
                     type="text"
-                    value={medication}
-                    onChange={(e) => setMedication(e.target.value)}
-                    placeholder="Ej: Amoxicilina 250mg c/12h con alimento"
+                    list="felinos-meds-list"
+                    value={medicacion}
+                    onChange={(e) => setMedicacion(e.target.value)}
+                    placeholder="Ej: Doxi 100mg 1/4 tab c/24h x 14 días"
                     className="w-full p-2 bg-white border border-indigo-200 rounded-xl font-medium"
                   />
                 </div>
@@ -665,22 +654,21 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
                       SISTEMA CLÍNICO:
                     </label>
                     <select
-                      value={system}
-                      onChange={(e) => setSystem(e.target.value)}
+                      value={sistema}
+                      onChange={(e) => setSistema(e.target.value)}
                       className="w-full p-2 bg-white border border-indigo-200 rounded-xl font-medium"
                     >
                       <option value="PREVENTIVO">Preventivo / Resguardo</option>
+                      <option value="OCULAR">Ocular / Oftálmico</option>
+                      <option value="RESPIRATORIO">Respiratorio (Calicivirus/Rino)</option>
                       <option value="DERMATOLOGICO">Dermatológico</option>
                       <option value="GASTROINTESTINAL">Gastrointestinal</option>
-                      <option value="RESPIRATORIO">Respiratorio</option>
-                      <option value="OFTALMOLOGICO">Oftalmológico</option>
-                      <option value="TRAUMATOLOGICO">Traumatológico</option>
                       <option value="TEGUMEN">Tegumentario</option>
                     </select>
                   </div>
                   <div>
                     <label className="font-bold text-slate-700 block mb-0.5 text-[10px]">
-                      TOTAL DE DOSIS:
+                      DÍAS / DOSIS TOTALES:
                     </label>
                     <input
                       type="number"
@@ -696,17 +684,98 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
             )}
           </div>
 
-          {/* 9. Observaciones */}
+          {/* 8. Observaciones Médicas & Seguimiento (Columnas 15, 16, 17) */}
+          <div className="space-y-2">
+            <div>
+              <label className="font-bold text-slate-700 block mb-1 text-[10px] uppercase">
+                OBSERVACIONES MÉDICAS (COLUMNA 15):
+              </label>
+              <textarea
+                rows={2}
+                value={observacionesMedicas}
+                onChange={(e) => setObservacionesMedicas(e.target.value)}
+                placeholder="Ej: Secreción nasal leve, buen apetito, mucosas rosadas..."
+                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-medium"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="font-bold text-slate-700 block mb-1 text-[10px] uppercase">
+                  REQUIERE SEGUIMIENTO:
+                </label>
+                <select
+                  value={requiereSeguimiento}
+                  onChange={(e) => setRequiereSeguimiento(e.target.value as any)}
+                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl font-bold"
+                >
+                  <option value="NO">NO</option>
+                  <option value="SI">SI</option>
+                </select>
+              </div>
+              <div>
+                <label className="font-bold text-slate-700 block mb-1 text-[10px] uppercase">
+                  TIPO SEGUIMIENTO:
+                </label>
+                <select
+                  value={tipoSeguimiento}
+                  onChange={(e) => setTipoSeguimiento(e.target.value)}
+                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl font-bold"
+                >
+                  <option value="TRATAMIENTO">TRATAMIENTO</option>
+                  <option value="MÉDICO">MÉDICO</option>
+                  <option value="NUTRICIONAL">NUTRICIONAL</option>
+                  <option value="COMPORTAMENTAL">COMPORTAMENTAL</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* 9. Aseo y Bienestar Felino (Columnas 19, 20, 21) */}
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+            <span className="font-bold text-slate-700 block text-[10px] uppercase flex items-center gap-1.5">
+              <Scissors className="w-3.5 h-3.5 text-slate-500" /> Aseo & Bienestar Felino Realizado al Ingreso:
+            </span>
+            <div className="grid grid-cols-3 gap-2">
+              <label className="flex items-center gap-1.5 p-2 bg-white rounded-xl border border-slate-200 font-medium text-[11px]">
+                <input
+                  type="checkbox"
+                  checked={peluqueria === "SI"}
+                  onChange={(e) => setPeluqueria(e.target.checked ? "SI" : "NO")}
+                />
+                <span>Peluquería</span>
+              </label>
+              <label className="flex items-center gap-1.5 p-2 bg-white rounded-xl border border-slate-200 font-medium text-[11px]">
+                <input
+                  type="checkbox"
+                  checked={corteUnas === "SI"}
+                  onChange={(e) => setCorteUnas(e.target.checked ? "SI" : "NO")}
+                />
+                <span>Corte Uñas</span>
+              </label>
+              <label className="flex items-center gap-1.5 p-2 bg-white rounded-xl border border-slate-200 font-medium text-[11px]">
+                <input
+                  type="checkbox"
+                  checked={limpiezaOidos === "SI"}
+                  onChange={(e) => setLimpiezaOidos(e.target.checked ? "SI" : "NO")}
+                />
+                <span>Aseo Ótico</span>
+              </label>
+            </div>
+          </div>
+
+          {/* 10. Médico Veterinario Responsable (Columna 23) */}
           <div>
-            <label className="font-bold text-slate-700 block mb-1 text-[10px] uppercase">
-              OBSERVACIONES CLÍNICAS / DIETA / NOTAS DE INGRESO:
+            <label className="font-bold text-slate-700 block mb-1 text-[10px] uppercase flex items-center gap-1">
+              <Stethoscope className="w-3.5 h-3.5 text-purple-600" /> MÉDICO VETERINARIO RESPONSABLE (COLUMNA 23):
             </label>
-            <textarea
-              rows={2}
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Ej: Rescatado en Comuna 13. Presenta baja condición corporal, dieta blanda..."
-              className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-medium"
+            <input
+              type="text"
+              list="vets-list"
+              value={medicoVeterinario}
+              onChange={(e) => setMedicoVeterinario(e.target.value)}
+              placeholder="Dra. Jenny Zapata Calle"
+              className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-900"
             />
           </div>
 
@@ -715,7 +784,7 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
             <button
               type="button"
               onClick={scrollToTop}
-              className="text-[11px] font-bold text-slate-500 hover:text-indigo-600 inline-flex items-center gap-1 p-1 rounded-lg"
+              className="text-[11px] font-bold text-purple-700 hover:text-purple-900 inline-flex items-center gap-1 p-1 rounded-lg"
             >
               <ArrowUp className="w-3.5 h-3.5" /> Volver al inicio del formulario
             </button>
@@ -736,10 +805,10 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
             type="button"
             onClick={handleSubmit}
             disabled={isSubmitting}
-            className="w-2/3 py-3.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black rounded-2xl text-xs shadow-lg shadow-emerald-600/25 flex items-center justify-center gap-2 transition-all"
+            className="w-2/3 py-3.5 bg-purple-700 hover:bg-purple-800 active:scale-95 text-white font-black rounded-2xl text-xs shadow-lg shadow-purple-700/25 flex items-center justify-center gap-2 transition-all"
           >
             <CheckCircle2 className="w-4 h-4" />
-            <span>{isSubmitting ? "GUARDANDO..." : "GUARDAR Y SUMAR AL CENSO"}</span>
+            <span>{isSubmitting ? "GUARDANDO..." : "GUARDAR EN CENSO GATERA"}</span>
           </button>
         </div>
       </div>

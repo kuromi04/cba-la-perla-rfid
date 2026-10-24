@@ -113,22 +113,38 @@ async function parseAndSyncGateraExcel(wb: XLSX.WorkBook): Promise<ImportResult>
         const raza = String(row[colRaza] || "DPC").trim();
         const color = String(row[colColor] || desc).trim();
 
+        const sexoCode = desc.toUpperCase().includes("HFA")
+          ? "HFA"
+          : desc.toUpperCase().includes("HFC")
+          ? "HFC"
+          : desc.toUpperCase().includes("MFC")
+          ? "MFC"
+          : "MFA";
+        const sexo: "macho" | "hembra" = sexoCode.startsWith("H") ? "hembra" : "macho";
+        const grupoEdad: "adulto" | "cachorro" = sexoCode.endsWith("A") ? "adulto" : "cachorro";
+
         const catItem: GateraCat = {
           ubicacion,
           microchip: cleanChip,
           shortChip,
           hc,
+          sexoCode,
+          sexo,
+          grupoEdad,
           nombre: `Gato ${desc.split(" ")[0] || ""} (${ubicacion})`,
           descripcion: desc,
-          sexo: desc.toUpperCase().includes("HFA") ? "hembra" : "macho",
           raza,
           color,
           isFeral,
           tipoIngreso: "APM",
-          edad,
+          edad: edad || "24 MESES",
           condicionCorporal: "RANGO 2.5/5",
-          estadoSalud: estado,
+          estadoSalud: estado || "Saludable",
           medicacion: tto !== "Ninguno" ? tto : "",
+          observacionesMedicas: obs,
+          requiereSeguimiento: tto !== "Ninguno" || obs ? "SI" : "NO",
+          tipoSeguimiento: tto !== "Ninguno" ? "TRATAMIENTO" : "OBSERVACIÓN",
+          medicoVeterinario: "Dra. Jenny Zapata Calle",
           sistema: "General",
           fechaFinal: "HNI",
           tipo: "S",

@@ -411,23 +411,53 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
   const handleApplyVoiceIntent = async (intent: ParsedClinicalIntent) => {
     if (!currentAnimal) return;
 
-    // Actualizar o insertar en shelterRecords
     const targetLoc = intent.location || currentAnimal.location;
-    await db.shelterRecords.add({
-      section: "TRIAJE",
-      ubicacion: targetLoc,
-      microchip: currentAnimal.microchip,
-      shortChip: currentAnimal.shortChip || currentAnimal.microchip.slice(-7),
-      descripcion: currentAnimal.breed || currentAnimal.name,
-      medicacion: intent.treatment,
-      fechaFinal: intent.durationDays ? `+${intent.durationDays} días` : "HNI",
-      tipo: "FS",
-      sistema: intent.system,
-      pendientes: intent.description,
-    });
+    const cleanChip = currentAnimal.microchip.trim();
+
+    // Actualizar gateraRecords
+    const catRecord = await db.gateraRecords.where("microchip").equals(cleanChip).first();
+    if (catRecord && catRecord.id) {
+      await db.gateraRecords.update(catRecord.id, {
+        ubicacion: targetLoc,
+        medicacion: intent.treatment || catRecord.medicacion,
+        sistema: intent.system || catRecord.sistema,
+        pendientes: intent.description || catRecord.pendientes,
+        fechaFinal: intent.durationDays ? `+${intent.durationDays} días` : catRecord.fechaFinal,
+      });
+    }
+
+    // Actualizar db.animals
+    if (currentAnimal.id) {
+      await db.animals.update(currentAnimal.id, {
+        location: targetLoc,
+        notes: intent.description ? `${currentAnimal.notes || ""}\n[VOZ IA]: ${intent.description}`.trim() : currentAnimal.notes,
+      });
+    }
+
+    // Registrar en Kardex si tiene tratamiento
+    if (intent.treatment) {
+      const nowIso = new Date().toISOString();
+      const duration = intent.durationDays || 7;
+      await db.kardex.add({
+        microchip: cleanChip,
+        shortChip: currentAnimal.shortChip || cleanChip.slice(-7),
+        system: intent.system || "PREVENTIVO",
+        treatment: intent.treatment,
+        description: intent.description || "Prescrito por Asistente de Voz IA",
+        startDate: nowIso.split("T")[0],
+        endDate: new Date(Date.now() + duration * 86400000).toISOString().split("T")[0],
+        status: "activo",
+        prescribedBy: currentUser?.name ? `Dr. ${currentUser.name} (IA)` : "Dra. Jenny Zapata Calle (IA)",
+        createdAt: nowIso,
+        area: "gatera",
+        dosisTotales: duration,
+        dosisAplicadas: 0,
+        dosisFaltantes: duration,
+      });
+    }
 
     handleSearch(currentAnimal.microchip);
-    setFeedbackMessage(`✨ Tratamiento de voz agregado: "${intent.treatment}" (${intent.system})`);
+    setFeedbackMessage(`✨ Nota clínica de voz procesada por IA: "${intent.treatment || intent.description}"`);
   };
 
   return (
@@ -646,48 +676,34 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
             )}
           </div>
 
-          {/* Sección de Desparasitante (Bravecto Interno / Externo) - EXCLUSIVO CANINOS */}
-          {(() => {
-            if (currentAnimal.species !== "perro") return null;
-            const bravectoEntry = shelterEntries.find(
-              (e) =>
-                e.section === "BRAVECTO" ||
-                (e.medicacion && e.medicacion.toLowerCase().includes("bravecto")) ||
-                e.dosisBravecto
-            );
-            if (!bravectoEntry) return null;
-
-            return (
-              <div className="p-4 bg-amber-50/90 border-2 border-amber-300 rounded-2xl space-y-2.5 animate-in fade-in">
-                <div className="flex items-center justify-between">
-                  <span className="font-black text-amber-950 text-xs flex items-center gap-1.5 uppercase tracking-wide">
-                    <Pill className="w-4 h-4 text-amber-600" /> Desparasitación (Bravecto Interno/Externo)
-                  </span>
-                  <span className="px-2.5 py-0.5 bg-amber-200 text-amber-900 rounded-full text-xs font-black">
-                    Dosis: {bravectoEntry.dosisBravecto || "1.0"}
-                  </span>
-                </div>
-                <p className="text-xs text-amber-800">
-                  Uso: Control ectoparásitos (pulgas, garrapatas, sarna) y endectocida. Prescripción:{" "}
-                  <strong>{bravectoEntry.medicacion || "BRAVECTO 365"}</strong>.
-                </p>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    setFeedbackMessage(
-                      `💊 Desparasitante administrado: Dosis ${bravectoEntry.dosisBravecto || "1.0"} de Bravecto aplicada a ${currentAnimal.name}`
-                    );
-                    if (typeof window !== "undefined" && "vibrate" in navigator) {
-                      navigator.vibrate([150, 50, 150]);
-                    }
-                  }}
-                  className="w-full py-2.5 px-4 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-black rounded-xl text-xs flex items-center justify-center gap-2 shadow-sm transition-all"
-                >
-                  <CheckCircle2 className="w-4 h-4" /> REGISTRAR APLICACIÓN DE BRAVECTO HOY
-                </button>
-              </div>
-            );
-          })()}
+          {/* Desparasitación Felina Oficial (Revolution Plus / Feline Full Spot / Total FCG) */}
+          <div className="p-4 bg-purple-50/80 border-2 border-purple-200 rounded-2xl space-y-2.5 animate-in fade-in">
+            <div className="flex items-center justify-between">
+              <span className="font-black text-purple-950 text-xs flex items-center gap-1.5 uppercase tracking-wide">
+                <Pill className="w-4 h-4 text-purple-600" /> Plan Sanitario & Desparasitación Felina
+              </span>
+              <span className="px-2.5 py-0.5 bg-purple-200 text-purple-900 rounded-full text-xs font-black">
+                Revolution Plus / Full Spot
+              </span>
+            </div>
+            <p className="text-xs text-purple-800">
+              Protocolo Gatera CBA La Perla: Control endo/ectoparásitos felinos (Selamectina / Fipronil).
+            </p>
+            <button
+              type="button"
+              onClick={async () => {
+                setFeedbackMessage(
+                  `💊 Desparasitante felino (Revolution Plus) registrado con éxito para ${currentAnimal.name}`
+                );
+                if (typeof window !== "undefined" && "vibrate" in navigator) {
+                  navigator.vibrate([150, 50, 150]);
+                }
+              }}
+              className="w-full py-2.5 px-4 bg-purple-700 hover:bg-purple-800 active:scale-95 text-white font-black rounded-xl text-xs flex items-center justify-center gap-2 shadow-sm transition-all"
+            >
+              <CheckCircle2 className="w-4 h-4" /> REGISTRAR APLICACIÓN DE DESPARASITANTE HOY
+            </button>
+          </div>
 
           {/* Modo de Edición Rápida en Campo (EXCLUSIVO MÉDICOS VETERINARIOS Y ADMIN) */}
           {(currentUser?.role === "veterinario" || currentUser?.role === "admin") && (
@@ -913,37 +929,14 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
             <button
               type="button"
               onClick={() => {
-                setPreselectedSpecies(currentUser?.area === "gatera" ? "gato" : "perro");
+                setPreselectedSpecies("gato");
                 setIsRegisterOpen(true);
               }}
-              className="btn-touch w-full py-4 px-5 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white rounded-2xl font-black text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-emerald-600/25 active:scale-95 transition-all"
+              className="btn-touch w-full py-4 px-5 bg-gradient-to-r from-purple-700 via-indigo-700 to-purple-800 hover:from-purple-800 hover:to-indigo-800 text-white rounded-2xl font-black text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-purple-700/25 active:scale-95 transition-all"
             >
-              <PlusCircle className="w-5 h-5 text-emerald-200" />
-              <span>INGRESAR FICHA DE ANIMAL NUEVO</span>
+              <PlusCircle className="w-5 h-5 text-purple-200" />
+              <span>🐱 INGRESAR FELINO EN CENSO GATERA (24 COLUMNAS)</span>
             </button>
-
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setPreselectedSpecies("perro");
-                  setIsRegisterOpen(true);
-                }}
-                className="py-2.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-950 rounded-xl font-black text-xs border border-emerald-200 flex items-center justify-center gap-1.5 transition-all active:scale-95"
-              >
-                <span>🐶 Nuevo Canino</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setPreselectedSpecies("gato");
-                  setIsRegisterOpen(true);
-                }}
-                className="py-2.5 px-3 bg-purple-50 hover:bg-purple-100 text-purple-950 rounded-xl font-black text-xs border border-purple-200 flex items-center justify-center gap-1.5 transition-all active:scale-95"
-              >
-                <span>🐱 Nuevo Felino (Gatera)</span>
-              </button>
-            </div>
           </div>
         </div>
       )}

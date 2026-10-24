@@ -4,20 +4,42 @@ import { GATERA_CATS_DATA, GateraCat } from "./gateraData";
 
 export interface Animal {
   id?: number;
+  nroAnimal?: string;
   microchip: string;
   shortChip?: string;
   name: string;
-  species: "perro" | "gato" | "ave" | "otro";
+  species: "gato" | "perro" | "ave" | "otro";
   breed: string;
   gender?: string;
-  location: string;
+  sexoCode?: string;            // A: HFA, MFA, HFC, MFC
+  grupoEdad?: "adulto" | "cachorro";
+  location: string;             // Nº CANIL (Columna B)
   status?: string;
   photoUrl?: string;
   notes?: string;
   lastCensusDate?: string;
-  hc?: string;
-  isFeral?: boolean;
-  color?: string;
+  hc?: string;                  // HISTORIA CLINICA (HC)
+  isFeral?: boolean;            // FERALES: SI / NO
+  color?: string;               // COLOR
+  tipoIngreso?: string;         // TIPO DE INGRESO: APM, RES, INC, E Y D
+  fechaNacimiento?: string;     // FECHA DE NACIMIENTO
+  edad?: string;                // EDAD APROXIMADA MESES
+  fechaIngreso?: string;        // FECHA DE INGRESO
+  condicionCorporal?: string;   // CONDICION CORPORAL: RANGO 1.0/5 a 4.0/5
+  estadoSalud?: string;         // ESTADO: Saludable, Regular, Delicado
+  observacionesMedicas?: string;// OBSERVACIONES MEDICAS (Diagnóstico / Cuadro clínico)
+  requiereSeguimiento?: string; // REQUIERE SEGUIMIENTO SI/NO
+  tipoSeguimiento?: string;     // TIPO DE SEGUIMIENTO: TRATAMIENTO, OBSERVACIÓN, etc.
+  fechaSeguimiento?: string;    // FECHA
+  peluqueria?: string;          // PELUQUERIA
+  corteUnas?: string;           // CORTE DE UÑAS
+  limpiezaOidos?: string;       // LIMPIEZA DE OIDOS
+  fechaAseo?: string;           // FECHA EN QUE SE REALIZÓ
+  medicoVeterinario?: string;   // MÉDICO VETERINARIO
+  vacunaTriple?: string;
+  vacunaLeucemia?: string;
+  vacunaRabia?: string;
+  desparasitante?: string;
 }
 
 export interface KardexRecord {
@@ -48,7 +70,9 @@ export interface KardexRecord {
 
 export interface CensusRecord {
   id?: number;
+  nroAnimal?: string;
   microchip: string;
+  shortChip?: string;
   animalName: string;
   species: string;
   location: string;
@@ -56,6 +80,25 @@ export interface CensusRecord {
   scannedBy: string;
   treatmentCount: number;
   area?: "caninos" | "gatera";
+  hc?: string;
+  sexoCode?: string;
+  raza?: string;
+  isFeral?: boolean;
+  color?: string;
+  tipoIngreso?: string;
+  edad?: string;
+  condicionCorporal?: string;
+  estadoSalud?: string;
+  medicacion?: string;
+  observacionesMedicas?: string;
+  requiereSeguimiento?: string;
+  tipoSeguimiento?: string;
+  fechaSeguimiento?: string;
+  peluqueria?: string;
+  corteUnas?: string;
+  limpiezaOidos?: string;
+  fechaAseo?: string;
+  medicoVeterinario?: string;
 }
 
 export interface ShiftTask {
@@ -151,7 +194,7 @@ function estimateTotalDoses(med: string, section?: string, dosisBrav?: string): 
  * No genera registros demo, de prueba ni dummy.
  */
 export async function initializeDatabaseIfEmpty(forceReset: boolean = false) {
-  // Si hay datos dummy previos en db.animals o db.census, purgamos y limpiamos
+  // Purgar datos dummy y si hay caninos activos (transición a 100% GATERA)
   const dummyCheck = await db.animals.filter((a) =>
     a.microchip.startsWith("DUMMY_") ||
     a.microchip.startsWith("dummy_") ||
@@ -159,8 +202,11 @@ export async function initializeDatabaseIfEmpty(forceReset: boolean = false) {
     a.name === "Toby" ||
     a.name === "Rocky"
   ).count();
-  if (dummyCheck > 0 || forceReset) {
-    console.log("Limpiando registros demo anteriores y restableciendo datos 100% reales...");
+
+  const dogCount = await db.animals.filter((a) => a.species === "perro").count();
+
+  if (dummyCheck > 0 || dogCount > 0 || forceReset) {
+    console.log("Limpiando datos anteriores y configurando sistema EXCLUSIVO GATERA...");
     await db.animals.clear();
     await db.kardex.clear();
     await db.shelterRecords.clear();
@@ -176,95 +222,36 @@ export async function initializeDatabaseIfEmpty(forceReset: boolean = false) {
   }
 
   const gateraCount = await db.gateraRecords.count();
-  const caninosCount = await db.shelterRecords.count();
-
-  if (gateraCount > 0 && caninosCount > 0 && !forceReset) {
+  if (gateraCount > 0 && !forceReset) {
     return await db.animals.count();
   }
 
-  console.log("Inicializando base de datos CBA La Perla: Caninos + Gatera (100% REAL)...");
+  console.log("Inicializando base de datos CBA La Perla: 100% GATERA MAESTRO (CENSO)...");
 
-  // 1. Cargar Planilla Caninos Real
-  if (caninosCount === 0 || forceReset) {
-    await db.shelterRecords.bulkAdd(RAW_SHELTER_DATA);
-  }
-
-  // 2. Cargar Planilla Gatera Real (Microchips 100% Únicos - Sin Duplicados)
-  if (gateraCount === 0 || forceReset) {
-    const uniqueGatera: GateraCat[] = [];
-    const seenGateraChips = new Set<string>();
-    for (const cat of GATERA_CATS_DATA) {
-      const chip = cat.microchip.trim();
-      if (!seenGateraChips.has(chip)) {
-        seenGateraChips.add(chip);
-        uniqueGatera.push(cat);
-      }
+  // 1. Cargar Planilla Gatera Real (Microchips 100% Únicos de la Hoja CENSO)
+  const uniqueGatera: GateraCat[] = [];
+  const seenGateraChips = new Set<string>();
+  for (const cat of GATERA_CATS_DATA) {
+    const chip = cat.microchip.trim().toUpperCase();
+    if (!seenGateraChips.has(chip)) {
+      seenGateraChips.add(chip);
+      uniqueGatera.push(cat);
     }
-    await db.gateraRecords.bulkAdd(uniqueGatera);
   }
+  await db.gateraRecords.bulkAdd(uniqueGatera);
 
-  // 3. Poblar tabla unificada de Animales y Kardex
+  // 2. Poblar tabla unificada de Animales y Kardex a partir del CENSO Maestro
   const animalsToInsert: Animal[] = [];
   const kardexToInsert: KardexRecord[] = [];
   const seenChips = new Set<string>();
 
-  // Inserción de Caninos Reales
-  for (const item of RAW_SHELTER_DATA) {
-    const chip = item.microchip.trim();
-    if (!seenChips.has(chip)) {
-      seenChips.add(chip);
-      const isMacho = item.descripcion.includes("MCA") || item.descripcion.includes("MCC");
-
-      animalsToInsert.push({
-        microchip: chip,
-        shortChip: item.shortChip,
-        name: item.descripcion.split("(")[1]?.replace(")", "").trim() || item.descripcion.split(" ")[0] || "Canino",
-        species: "perro",
-        breed: item.descripcion,
-        gender: isMacho ? "macho" : "hembra",
-        location: item.ubicacion,
-        status: item.section.includes("FINALIZADO") ? "inactivo" : "activo",
-        notes: item.pendientes || item.motivo || "",
-        isFeral: false,
-      });
-    }
-
-    if (item.medicacion) {
-      const isFinalizado = item.section.includes("FINALIZADO");
-      const totalDoses = estimateTotalDoses(item.medicacion, item.section, item.dosisBravecto);
-      const appliedDoses = isFinalizado ? totalDoses : Math.floor(totalDoses * 0.3); // progreso inicial real
-      const missingDoses = isFinalizado ? 0 : Math.max(0, totalDoses - appliedDoses);
-
-      kardexToInsert.push({
-        microchip: chip,
-        shortChip: item.shortChip,
-        system: item.sistema || "PREVENTIVO",
-        treatment: item.medicacion,
-        description: `Caninos [${item.section}]. Pendientes: ${item.pendientes || "Ninguno"}`,
-        startDate: item.fechaInicio || new Date().toISOString().split("T")[0],
-        endDate: item.fechaFinal || "HNI",
-        status: isFinalizado ? "finalizado" : "activo",
-        prescribedBy: "Dr. Andrés Mendoza (Vet Caninos)",
-        createdAt: new Date().toISOString(),
-        tipo: item.tipo,
-        pendientes: item.pendientes,
-        section: item.section,
-        dosisBravecto: item.dosisBravecto,
-        area: "caninos",
-        dosisTotales: totalDoses,
-        dosisAplicadas: appliedDoses,
-        dosisFaltantes: missingDoses,
-      });
-    }
-  }
-
-  // Inserción de Felinos Reales (Gatera)
-  for (const cat of GATERA_CATS_DATA) {
-    const chip = cat.microchip.trim();
+  for (const cat of uniqueGatera) {
+    const chip = cat.microchip.trim().toUpperCase();
     const isFeralCat = Boolean(
       cat.isFeral ||
       (cat.pendientes && cat.pendientes.toUpperCase().includes("FERAL")) ||
-      (cat.descripcion && cat.descripcion.toUpperCase().includes("FERAL"))
+      (cat.descripcion && cat.descripcion.toUpperCase().includes("FERAL")) ||
+      (cat.observacionesMedicas && cat.observacionesMedicas.toUpperCase().includes("FERAL"))
     );
     cat.isFeral = isFeralCat;
 
@@ -272,18 +259,40 @@ export async function initializeDatabaseIfEmpty(forceReset: boolean = false) {
       seenChips.add(chip);
 
       animalsToInsert.push({
+        nroAnimal: cat.nroAnimal,
         microchip: chip,
         shortChip: cat.shortChip,
         name: cat.nombre,
         species: "gato",
-        breed: `${cat.raza} - ${cat.color}`,
+        breed: cat.raza || "DPC",
         gender: cat.sexo,
+        sexoCode: cat.sexoCode,
+        grupoEdad: cat.grupoEdad,
         location: cat.ubicacion,
         status: "activo",
-        notes: `${cat.pendientes}. HC: ${cat.hc}`,
+        notes: `${cat.pendientes || ""}. HC: ${cat.hc || ""}`,
         hc: cat.hc,
         isFeral: isFeralCat,
         color: cat.color,
+        tipoIngreso: cat.tipoIngreso,
+        fechaNacimiento: cat.fechaNacimiento,
+        edad: cat.edad,
+        fechaIngreso: cat.fechaIngreso,
+        condicionCorporal: cat.condicionCorporal,
+        estadoSalud: cat.estadoSalud,
+        observacionesMedicas: cat.observacionesMedicas,
+        requiereSeguimiento: cat.requiereSeguimiento,
+        tipoSeguimiento: cat.tipoSeguimiento,
+        fechaSeguimiento: cat.fechaSeguimiento,
+        peluqueria: cat.peluqueria,
+        corteUnas: cat.corteUnas,
+        limpiezaOidos: cat.limpiezaOidos,
+        fechaAseo: cat.fechaAseo,
+        medicoVeterinario: cat.medicoVeterinario,
+        vacunaTriple: cat.vacunaTriple,
+        vacunaLeucemia: cat.vacunaLeucemia,
+        vacunaRabia: cat.vacunaRabia,
+        desparasitante: cat.desparasitante,
       });
     }
 
@@ -297,15 +306,15 @@ export async function initializeDatabaseIfEmpty(forceReset: boolean = false) {
         shortChip: cat.shortChip,
         system: cat.sistema || "TEGUMEN",
         treatment: cat.medicacion,
-        description: `Gatera [${cat.ubicacion}]. HC: ${cat.hc} ${cat.isFeral ? "⚠️ FERAL" : ""}`,
-        startDate: new Date().toISOString().split("T")[0],
+        description: `Gatera [${cat.ubicacion}]. HC: ${cat.hc} ${cat.isFeral ? "⚠️ FERAL" : ""}. ${cat.observacionesMedicas || ""}`,
+        startDate: cat.fechaIngreso || new Date().toISOString().split("T")[0],
         endDate: cat.fechaFinal || "HNI",
         status: "activo",
-        prescribedBy: "Dra. Carolina Valencia (Vet Gatera)",
+        prescribedBy: cat.medicoVeterinario || "Dra. Jenny Zapata Calle",
         createdAt: new Date().toISOString(),
         tipo: cat.tipo,
         pendientes: cat.pendientes,
-        section: "GATERA_OCTUBRE",
+        section: "GATERA_CENSO",
         area: "gatera",
         dosisTotales: totalDoses,
         dosisAplicadas: appliedDoses,
@@ -313,6 +322,9 @@ export async function initializeDatabaseIfEmpty(forceReset: boolean = false) {
       });
     }
   }
+
+  await db.animals.bulkAdd(animalsToInsert);
+  await db.kardex.bulkAdd(kardexToInsert);
 
   await db.animals.bulkAdd(animalsToInsert);
   await db.kardex.bulkAdd(kardexToInsert);
@@ -480,129 +492,65 @@ export async function generateTodayShiftTasks(): Promise<ShiftTask[]> {
     return await db.shiftTasks.toArray();
   }
 
-  console.log("Generando despacho de tareas de turno con datos reales...");
+  console.log("Generando despacho de tareas de turno 100% GATERA...");
   const tasksToInsert: ShiftTask[] = [];
 
-  // 1. Tareas de Medicación Nocturna (Caninos)
-  const caninosNoche = await db.shelterRecords.where("section").equals("NOCHE").toArray();
-  for (let idx = 0; idx < caninosNoche.length; idx++) {
-    const item = caninosNoche[idx];
-    const kardexItem = await db.kardex.where("microchip").equals(item.microchip).first();
+  // Tareas de Gatera (Felinos Reales del CENSO)
+  const gateraCats = await db.gateraRecords.toArray();
 
-    tasksToInsert.push({
-      kardexId: kardexItem?.id,
-      animalName: item.descripcion,
-      species: "perro",
-      microchip: item.microchip,
-      location: item.ubicacion,
-      medication: item.medicacion,
-      shift: "noche",
-      laborType: "medicacion",
-      isCompleted: false,
-      notes: "Dosis nocturna obligatoria",
-      area: "caninos",
-      assignedTo: undefined,
-      assignedRole: undefined,
-      dosisTotales: kardexItem?.dosisTotales || 7,
-      dosisAplicadas: kardexItem?.dosisAplicadas || 0,
-      dosisFaltantes: kardexItem?.dosisFaltantes || 7,
-    });
-  }
-
-  // 2. Limpiezas y Curaciones
-  const limpiezas = await db.shelterRecords.where("section").equals("LIMPIEZAS").toArray();
-  limpiezas.forEach((item) => {
-    tasksToInsert.push({
-      animalName: item.descripcion,
-      species: "perro",
-      microchip: item.microchip,
-      location: item.ubicacion,
-      medication: item.medicacion,
-      shift: "mañana",
-      laborType: "limpieza",
-      isCompleted: false,
-      notes: "Curación tópica en campo",
-      area: "caninos",
-      assignedTo: undefined,
-      assignedRole: undefined,
-    });
-  });
-
-  // 3. Baños Medicados
-  const banos = await db.shelterRecords.where("section").equals("BAÑOS").toArray();
-  banos.forEach((item) => {
-    tasksToInsert.push({
-      animalName: item.descripcion,
-      species: "perro",
-      microchip: item.microchip,
-      location: item.ubicacion,
-      medication: item.medicacion,
-      shift: "mañana",
-      laborType: "baño",
-      isCompleted: false,
-      notes: `Baño medicado shampoo. Fin: ${item.fechaFinal || "HNI"}`,
-      area: "caninos",
-      assignedTo: undefined,
-      assignedRole: undefined,
-    });
-  });
-
-  // 4. Aplicación de Bravecto
-  const bravecto = await db.shelterRecords.where("section").equals("BRAVECTO").toArray();
-  for (const item of bravecto) {
-    const kardexItem = await db.kardex.where("microchip").equals(item.microchip).first();
-
-    tasksToInsert.push({
-      kardexId: kardexItem?.id,
-      animalName: item.descripcion,
-      species: "perro",
-      microchip: item.microchip,
-      location: item.ubicacion,
-      medication: `BRAVECTO (Dosis: ${item.dosisBravecto || "1.0"})`,
-      shift: "mañana",
-      laborType: "bravecto",
-      isCompleted: false,
-      notes: "Desparasitante interno y externo",
-      area: "caninos",
-      assignedTo: undefined,
-      assignedRole: undefined,
-      dosisTotales: 1,
-      dosisAplicadas: 0,
-      dosisFaltantes: 1,
-    });
-  }
-
-  // 5. Tratamientos de Gatera (Felinos Reales)
-  const gateraCats = await db.gateraRecords
-    .filter((c) => Boolean(c.medicacion && c.medicacion !== "Ninguno"))
-    .toArray();
-
-  for (let idx = 0; idx < Math.min(35, gateraCats.length); idx++) {
+  for (let idx = 0; idx < gateraCats.length; idx++) {
     const cat = gateraCats[idx];
-    const isNeb =
-      cat.medicacion.toLowerCase().includes("nebuliza") ||
-      cat.medicacion.toLowerCase().includes("puff");
     const kardexItem = await db.kardex.where("microchip").equals(cat.microchip).first();
 
-    tasksToInsert.push({
-      kardexId: kardexItem?.id,
-      animalName: cat.nombre,
-      species: "gato",
-      microchip: cat.microchip,
-      location: cat.ubicacion,
-      medication: cat.medicacion,
-      shift: idx % 2 === 0 ? "mañana" : "tarde",
-      laborType: isNeb ? "nebulizacion" : "medicacion",
-      isCompleted: false,
-      isFeral: cat.isFeral,
-      notes: `${cat.pendientes}. HC: ${cat.hc}`,
-      area: "gatera",
-      assignedTo: undefined,
-      assignedRole: undefined,
-      dosisTotales: kardexItem?.dosisTotales || 7,
-      dosisAplicadas: kardexItem?.dosisAplicadas || 0,
-      dosisFaltantes: kardexItem?.dosisFaltantes || 7,
-    });
+    // 1. Tareas de Medicación
+    if (cat.medicacion && cat.medicacion !== "Ninguno") {
+      const isNeb =
+        cat.medicacion.toLowerCase().includes("nebuliza") ||
+        cat.medicacion.toLowerCase().includes("puff");
+      const isOfta =
+        cat.medicacion.toLowerCase().includes("ofta") ||
+        cat.medicacion.toLowerCase().includes("gotas") ||
+        cat.medicacion.toLowerCase().includes("ojo");
+
+      tasksToInsert.push({
+        kardexId: kardexItem?.id,
+        animalName: cat.nombre,
+        species: "gato",
+        microchip: cat.microchip,
+        location: cat.ubicacion,
+        medication: cat.medicacion,
+        shift: idx % 2 === 0 ? "mañana" : "tarde",
+        laborType: isNeb ? "nebulizacion" : (isOfta ? "medicacion" : "medicacion"),
+        isCompleted: false,
+        isFeral: cat.isFeral,
+        notes: `${cat.pendientes || ""}. HC: ${cat.hc} ${cat.isFeral ? "⚠️ MANEJO FERAL / GUANTES" : ""}`,
+        area: "gatera",
+        assignedTo: undefined,
+        assignedRole: undefined,
+        dosisTotales: kardexItem?.dosisTotales || 7,
+        dosisAplicadas: kardexItem?.dosisAplicadas || 0,
+        dosisFaltantes: kardexItem?.dosisFaltantes || 7,
+      });
+    }
+
+    // 2. Tareas de Limpieza de Oídos y Aseo programadas
+    if (cat.limpiezaOidos && cat.limpiezaOidos !== "NO") {
+      tasksToInsert.push({
+        animalName: cat.nombre,
+        species: "gato",
+        microchip: cat.microchip,
+        location: cat.ubicacion,
+        medication: "LIMPIEZA DE OIDOS + ASEO FELINO",
+        shift: "mañana",
+        laborType: "limpieza",
+        isCompleted: false,
+        isFeral: cat.isFeral,
+        notes: `Aseo y limpieza ótica. HC: ${cat.hc}`,
+        area: "gatera",
+        assignedTo: undefined,
+        assignedRole: undefined,
+      });
+    }
   }
 
   await db.shiftTasks.bulkAdd(tasksToInsert);

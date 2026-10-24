@@ -230,25 +230,15 @@ export default function Home() {
         </div>
 
         {/* Fila 3: Sub-barra de Población Activa 100% Real adaptada al área */}
+        {/* Fila 3: Sub-barra de Población Activa 100% Real adaptada a GATERA */}
         <div className="pt-1.5 border-t border-slate-800/80 flex items-center justify-between text-xs">
           <span className="text-[10px] uppercase font-bold text-slate-400">
-            {currentUser?.area === "gatera"
-              ? "Área Asignada: Gatera"
-              : currentUser?.area === "caninos"
-              ? "Área Asignada: Caninos"
-              : "Población Activa Real:"}
+            Sistema Oficial Exclusivo:
           </span>
           <div className="flex gap-2 text-[11px] font-bold">
-            {(!currentUser || currentUser.area === "caninos" || currentUser.area === "ambas" || currentUser.role === "admin") && (
-              <span className="bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded-lg flex items-center gap-1">
-                🐶 Caninos (Triaje/UCE)
-              </span>
-            )}
-            {(!currentUser || currentUser.area === "gatera" || currentUser.area === "ambas" || currentUser.role === "admin") && (
-              <span className="bg-purple-950 text-purple-300 border border-purple-800 px-2 py-0.5 rounded-lg flex items-center gap-1">
-                🐱 Gatera (461 Felinos)
-              </span>
-            )}
+            <span className="bg-purple-950 text-purple-300 border border-purple-800 px-2.5 py-0.5 rounded-lg flex items-center gap-1.5 shadow-xs">
+              🐱 Gatera CBA La Perla (439 Felinos • 24 Columnas)
+            </span>
           </div>
         </div>
 

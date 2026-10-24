@@ -20,6 +20,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import * as XLSX from "xlsx";
+import { exportGateraExcel } from "@/lib/excelGenerator";
 import { BatchScannerModal } from "./BatchScannerModal";
 import { RegisterNewAnimalModal } from "./RegisterNewAnimalModal";
 
@@ -208,71 +209,18 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
   };
 
   const handleExportExcel = async () => {
-    // Obtener todos los animales reales (filtrados por área si aplica)
-    let allAnimals = await db.animals.toArray();
-    if (currentUser?.area === "gatera" && currentUser?.role !== "admin") {
-      allAnimals = allAnimals.filter((a) => a.species === "gato");
-    } else if (currentUser?.area === "caninos" && currentUser?.role !== "admin") {
-      allAnimals = allAnimals.filter((a) => a.species === "perro");
+    setIsSyncing(true);
+    setSyncMessage("Generando archivo Excel oficial de GATERA con las 24 columnas maestras...");
+    try {
+      await exportGateraExcel();
+      setSyncMessage("✅ Excel maestro de Gatera exportado con éxito (CENSO 24 columnas, PLAN TTO y PLAN SANITARIO).");
+    } catch (err: any) {
+      console.error(err);
+      setSyncMessage("Error al exportar archivo Excel maestro de Gatera.");
+    } finally {
+      setIsSyncing(false);
+      setTimeout(() => setSyncMessage(null), 5000);
     }
-
-    const allTreatments = await db.kardex.where("status").equals("activo").toArray();
-
-    // Crear mapa de tratamientos por microchip
-    const treatmentsMap: Record<string, KardexRecord> = {};
-    allTreatments.forEach((t) => {
-      treatmentsMap[t.microchip] = t;
-    });
-
-    // Formato oficial del Centro de Bienestar Animal La Perla
-    const rows = allAnimals.map((animal) => {
-      const activeTreat = treatmentsMap[animal.microchip];
-
-      return {
-        ALBERGUE: "CBA LA PERLA",
-        UBICACION: animal.location || "SIN ASIGNAR",
-        MICROCHIP: animal.microchip,
-        ESPECIE: animal.species.toUpperCase(),
-        DESCRIPCION: `${animal.name} (${animal.breed || "Mestizo"})`,
-        HISTORIA_CLINICA: animal.hc || "N/A",
-        CONDICION_FERAL: animal.isFeral ? "SI (FERAL)" : "NO",
-        SISTEMA_MEDICO: activeTreat?.system || "NINGUNO",
-        TRATAMIENTO_ACTIVO: activeTreat?.treatment || "SIN TRATAMIENTO",
-        DOSIS_PROGRAMADAS: activeTreat?.dosisTotales || "N/A",
-        DOSIS_CUMPLIDAS: activeTreat?.dosisAplicadas || 0,
-        DOSIS_FALTANTES: activeTreat?.dosisFaltantes || 0,
-        FECHA_INICIO: activeTreat?.startDate || "",
-        FECHA_FIN: activeTreat?.endDate || "",
-      };
-    });
-
-    const worksheet = XLSX.utils.json_to_sheet(rows);
-
-    // Ajustar anchos de columnas
-    worksheet["!cols"] = [
-      { wch: 15 }, // ALBERGUE
-      { wch: 18 }, // UBICACION
-      { wch: 22 }, // MICROCHIP
-      { wch: 10 }, // ESPECIE
-      { wch: 32 }, // DESCRIPCION
-      { wch: 18 }, // HC
-      { wch: 16 }, // FERAL
-      { wch: 20 }, // SISTEMA
-      { wch: 32 }, // TRATAMIENTO
-      { wch: 18 }, // DOSIS PROGRAMADAS
-      { wch: 16 }, // DOSIS CUMPLIDAS
-      { wch: 16 }, // DOSIS FALTANTES
-      { wch: 14 }, // INICIO
-      { wch: 14 }, // FIN
-    ];
-
-    const workbook = XLSX.utils.book_new();
-    const sheetName = currentUser?.area === "gatera" ? "Censo_Gatera" : currentUser?.area === "caninos" ? "Censo_Caninos" : "Censo_General";
-    XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
-
-    const today = new Date().toISOString().split("T")[0];
-    const prefix = currentUser?.area === "gatera" ? "Censo_Gatera" : currentUser?.area === "caninos" ? "Censo_Caninos" : "Censo_Oficial_CBA_La_Perla";
-    XLSX.writeFile(workbook, `${prefix}_${today}.xlsx`);
   };
 
   const filteredCensus = censusList.filter(

@@ -326,23 +326,60 @@ export async function exportGateraExcel() {
   const cats = await db.gateraRecords.toArray();
   const workbook = XLSX.utils.book_new();
 
-  // Hoja 1: CENSO GATERA
+  // Hoja 1: CENSO GATERA (Estructura Fiel de las 24 Columnas del Archivo Maestro)
   const censoRows = cats.map((c) => ({
+    "N° animal": c.nroAnimal || "",
     "Nº CANIL": c.ubicacion,
     "MICROCHIP (MC)": c.microchip,
     "HISTORIA CLINICA (HC)": c.hc,
-    "DESCRIPCIÓN": c.descripcion,
-    "SEXO": c.sexo.toUpperCase(),
-    "RAZA": c.raza,
-    "COLOR": c.color,
-    "FERAL": c.isFeral ? "SI" : "NO",
-    "TIPO INGRESO": c.tipoIngreso,
-    "EDAD APROX": c.edad,
-    "CONDICION CORPORAL": c.condicionCorporal,
-    "ESTADO SALUD": c.estadoSalud,
-    "TRATAMIENTOS ACTIVOS": c.medicacion,
+    "A": c.sexoCode || (c.sexo === "hembra" ? "HFA" : "MFA"),
+    "RAZA": c.raza || "DPC",
+    "FERALES": c.isFeral ? "SI" : "NO",
+    "COLOR": c.color || "",
+    "TIPO DE INGRESO": c.tipoIngreso || "RES",
+    "FECHA DE NACIMIENTO": c.fechaNacimiento || "",
+    "EDAD APROXIMADA MESES ": c.edad || "",
+    "FECHA DE INGRESO": c.fechaIngreso || "",
+    "CONDICION CORPORAL": c.condicionCorporal || "RANGO 2.0/5",
+    "ESTADO": c.estadoSalud || "Saludable",
+    "TRATAMIENTO": c.medicacion || "",
+    "OBSERVACIONES MEDICAS  ": c.observacionesMedicas || "",
+    "REQUIERE SEGUIMIENTO SI/NO ": c.requiereSeguimiento || (c.observacionesMedicas ? "SI" : "NO"),
+    "TIPO DE SEGUIMIENTO ": c.tipoSeguimiento || "TRATAMIENTO",
+    "FECHA ": c.fechaSeguimiento || "",
+    "PELUQUERIA ": c.peluqueria || "",
+    "CORTE DE UÑAS ": c.corteUnas || "",
+    "LIMPIEZA DE OIDOS": c.limpiezaOidos || "",
+    "FECHA EN QUE SE REALIZÓ": c.fechaAseo || "",
+    "MÉDICO VETERINARIO": c.medicoVeterinario || "Dra. Jenny Zapata Calle",
   }));
   const wsCenso = XLSX.utils.json_to_sheet(censoRows);
+  wsCenso["!cols"] = [
+    { wch: 10 }, // N° animal
+    { wch: 22 }, // Nº CANIL
+    { wch: 22 }, // MICROCHIP
+    { wch: 14 }, // HC
+    { wch: 8 },  // A (sexoCode)
+    { wch: 10 }, // RAZA
+    { wch: 10 }, // FERALES
+    { wch: 26 }, // COLOR
+    { wch: 16 }, // TIPO DE INGRESO
+    { wch: 14 }, // FECHA DE NACIMIENTO
+    { wch: 20 }, // EDAD APROXIMADA
+    { wch: 14 }, // FECHA DE INGRESO
+    { wch: 16 }, // CONDICION CORPORAL
+    { wch: 14 }, // ESTADO
+    { wch: 38 }, // TRATAMIENTO
+    { wch: 35 }, // OBSERVACIONES MEDICAS
+    { wch: 14 }, // REQUIERE SEGUIMIENTO
+    { wch: 20 }, // TIPO DE SEGUIMIENTO
+    { wch: 14 }, // FECHA SEGUIMIENTO
+    { wch: 12 }, // PELUQUERIA
+    { wch: 14 }, // CORTE DE UÑAS
+    { wch: 16 }, // LIMPIEZA DE OIDOS
+    { wch: 14 }, // FECHA ASEO
+    { wch: 30 }, // MÉDICO VETERINARIO
+  ];
   XLSX.utils.book_append_sheet(workbook, wsCenso, "CENSO");
 
   // Hoja 2: PLAN TTO OCTUBRE GATERA
