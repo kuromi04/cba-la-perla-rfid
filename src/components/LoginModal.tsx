@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
-import { StaffMember, getAllStaff, registerStaffMember, deleteStaffMember } from "@/lib/staff";
+import { StaffMember, getAllStaff, registerStaffMember, deleteStaffMember, MASTER_ADMIN } from "@/lib/staff";
 import {
   User,
   Stethoscope,
@@ -10,6 +10,8 @@ import {
   Trash2,
   Users,
   CheckCircle2,
+  Shield,
+  Lock,
 } from "lucide-react";
 
 interface LoginModalProps {
@@ -30,10 +32,10 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
 
-  // Formulario de registro de nuevo empleado
+  // Formulario de registro de nuevo empleado (ROL ADMIN EXCLUSIVO Y BLOQUEADO)
   const [name, setName] = useState("");
-  const [role, setRole] = useState<"veterinario" | "auxiliar" | "operario" | "admin">("veterinario");
-  const [area, setArea] = useState<"caninos" | "gatera" | "ambas">("caninos");
+  const [role, setRole] = useState<"veterinario" | "auxiliar" | "operario">("veterinario");
+  const [area, setArea] = useState<"caninos" | "gatera" | "ambas">("gatera");
   const [specialty, setSpecialty] = useState("");
   const [phone, setPhone] = useState("");
 
@@ -243,17 +245,27 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                           </span>
                         )}
 
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDelete(staff.id, staff.name);
-                          }}
-                          className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors ml-1"
-                          title="Eliminar este empleado"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {staff.id === MASTER_ADMIN.id ? (
+                          <span
+                            className="px-2 py-1 bg-purple-100 text-purple-900 border border-purple-300 rounded-xl text-[9px] font-black flex items-center gap-1 shadow-xs ml-1"
+                            title="Administrador Maestro Permanente del Sistema"
+                          >
+                            <Shield className="w-3 h-3 text-purple-700" />
+                            Admin Único
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDelete(staff.id, staff.name);
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors ml-1"
+                            title="Eliminar este empleado"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -292,7 +304,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                   <option value="veterinario">👨‍⚕️ Médico Veterinario</option>
                   <option value="auxiliar">🧑‍🔬 Auxiliar Veterinario</option>
                   <option value="operario">👷 Operario de Albergue</option>
-                  <option value="admin">🔑 Administrador</option>
                 </select>
               </div>
 

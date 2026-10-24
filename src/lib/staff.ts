@@ -12,14 +12,27 @@ export interface StaffMember {
   registeredAt?: string;
 }
 
+// Administrador Maestro Exclusivo (Kuromi)
+export const MASTER_ADMIN: StaffMember = {
+  id: "admin_kuromi_master",
+  name: "Administrador Maestro",
+  role: "admin",
+  specialty: "Dirección y Control General",
+  area: "ambas",
+  phone: "",
+  token: "magic_admin_kuromi_master_cba",
+  avatarColor: "bg-purple-900 text-white",
+  registeredAt: "2026-01-01T00:00:00.000Z",
+};
+
 // Array vacío inicial: Sin datos precargados. Cada empleado se registra de nuevo.
-export const SHELTER_STAFF: StaffMember[] = [];
+export const SHELTER_STAFF: StaffMember[] = [MASTER_ADMIN];
 
 const AVATAR_COLORS: Record<string, string> = {
   veterinario: "bg-emerald-700 text-white",
   auxiliar: "bg-amber-600 text-white",
   operario: "bg-blue-600 text-white",
-  admin: "bg-purple-800 text-white",
+  admin: "bg-purple-900 text-white",
 };
 
 /**
@@ -38,31 +51,55 @@ export function generateMagicToken(name: string, role: string): string {
 
 /**
  * Obtener todos los empleados registrados (de IndexedDB + localStorage)
+ * Garantiza que MASTER_ADMIN sea siempre el único admin del sistema.
  */
 export async function getAllStaff(): Promise<StaffMember[]> {
+  let list: StaffMember[] = [];
+
   try {
-    const list = await db.staff.toArray();
-    if (list && list.length > 0) return list;
+    const fromDb = await db.staff.toArray();
+    if (fromDb && fromDb.length > 0) {
+      list = fromDb;
+    }
   } catch (err) {
     console.error("Error reading staff from Dexie:", err);
   }
 
-  // Respaldo en localStorage
-  if (typeof window !== "undefined") {
+  // Respaldo en localStorage si db estaba vacío
+  if (list.length === 0 && typeof window !== "undefined") {
     try {
       const local = localStorage.getItem("cba_laperla_staff_list");
       if (local) {
         const parsed = JSON.parse(local);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) list = parsed;
       }
     } catch {}
   }
 
-  return [];
+  // REGLA DE ORO: Solo el usuario creador (MASTER_ADMIN) puede ser 'admin'.
+  // Cualquier otro usuario que intente tener 'admin' se normaliza a 'veterinario'.
+  list = list.map((member) => {
+    if (member.id !== MASTER_ADMIN.id && member.role === "admin") {
+      return { ...member, role: "veterinario" as const };
+    }
+    return member;
+  });
+
+  // Asegurar que el Master Admin esté siempre presente al inicio
+  if (!list.some((s) => s.id === MASTER_ADMIN.id)) {
+    list = [MASTER_ADMIN, ...list];
+    try {
+      await db.staff.put(MASTER_ADMIN);
+    } catch {}
+  }
+
+  return list;
 }
 
 /**
- * Registrar un nuevo empleado (Médico Veterinario, Auxiliar, Operario o Admin)
+ * Registrar un nuevo empleado.
+ * NOTA DE SEGURIDAD: El rol 'admin' está bloqueado; los nuevos registros
+ * solo pueden ser 'veterinario', 'auxiliar' u 'operario'.
  */
 export async function registerStaffMember(data: {
   name: string;
@@ -71,20 +108,33 @@ export async function registerStaffMember(data: {
   area: "caninos" | "gatera" | "ambas";
   phone?: string;
 }): Promise<StaffMember> {
-  const cleanId = data.name
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]/g, "_") + "_" + Date.now().toString().slice(-4);
+  // Blindaje: si alguien intenta enviar 'admin', se le asigna 'veterinario'
+  const assignedRole: "operario" | "auxiliar" | "veterinario" =
+    data.role === "admin" ? "veterinario" : data.role;
 
-  const token = generateMagicToken(data.name, data.role);
-  const avatarColor = AVATAR_COLORS[data.role] || "bg-slate-700 text-white";
+  const cleanId =
+    data.name
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]/g, "_") +
+    "_" +
+    Date.now().toString().slice(-4);
+
+  const token = generateMagicToken(data.name, assignedRole);
+  const avatarColor = AVATAR_COLORS[assignedRole] || "bg-slate-700 text-white";
 
   const newMember: StaffMember = {
     id: cleanId,
     name: data.name.trim(),
-    role: data.role,
-    specialty: data.specialty?.trim() || (data.role === "veterinario" ? "Médico Veterinario" : data.role.toUpperCase()),
+    role: assignedRole,
+    specialty:
+      data.specialty?.trim() ||
+      (assignedRole === "veterinario"
+        ? "Médico Veterinario"
+        : assignedRole === "auxiliar"
+        ? "Auxiliar Veterinario"
+        : "Operario de Albergue"),
     area: data.area,
     phone: data.phone?.trim() || "",
     token,
@@ -111,9 +161,14 @@ export async function registerStaffMember(data: {
 }
 
 /**
- * Eliminar un empleado
+ * Eliminar un empleado (Protege al Administrador Maestro contra eliminación)
  */
 export async function deleteStaffMember(id: string): Promise<void> {
+  if (id === MASTER_ADMIN.id) {
+    console.warn("No se puede eliminar la cuenta del Administrador Maestro.");
+    return;
+  }
+
   try {
     await db.staff.delete(id);
   } catch {}

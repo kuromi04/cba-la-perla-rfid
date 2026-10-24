@@ -39,6 +39,8 @@ export const MagicLinkModal: React.FC<MagicLinkModalProps> = ({
     ? `${origin}/?token=${selectedStaff.token}&user=${selectedStaff.id}&role=${selectedStaff.role}&area=${selectedStaff.area}`
     : "";
 
+  const [messageCopied, setMessageCopied] = useState(false);
+
   const handleCopy = () => {
     if (!magicUrl) return;
     navigator.clipboard.writeText(magicUrl);
@@ -46,10 +48,39 @@ export const MagicLinkModal: React.FC<MagicLinkModalProps> = ({
     setTimeout(() => setCopied(false), 2500);
   };
 
+  const getWhatsAppMessageText = () => {
+    if (!selectedStaff || !magicUrl) return "";
+    const roleEmoji =
+      selectedStaff.role === "veterinario"
+        ? "👨‍⚕️ Dr(a)."
+        : selectedStaff.role === "auxiliar"
+        ? "🧑‍🔬 Auxiliar"
+        : "👷 Operario";
+    return `🐾 *CBA LA PERLA - ALCALDÍA DE MEDELLÍN*\n\n¡Hola *${selectedStaff.name}* (${roleEmoji})!\n\nAquí tienes tu *Enlace Mágico Oficial* para iniciar turno y registrar tareas de *${selectedStaff.area.toUpperCase()}* sin contraseñas:\n👉 ${magicUrl}\n\n_Acceso directo seguro para el albergue._`;
+  };
+
+  const handleCopyMessage = () => {
+    const text = getWhatsAppMessageText();
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setMessageCopied(true);
+    setTimeout(() => setMessageCopied(false), 2500);
+  };
+
   const handleShareWhatsApp = () => {
     if (!selectedStaff || !magicUrl) return;
-    const text = `Hola ${selectedStaff.name}, aquí tienes tu Enlace Mágico de acceso directo a tus tareas de CBA La Perla (${selectedStaff.area.toUpperCase()}): ${magicUrl}`;
-    const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+    const text = getWhatsAppMessageText();
+    let phoneParam = "";
+    if (selectedStaff.phone) {
+      let clean = selectedStaff.phone.replace(/[^0-9]/g, "");
+      if (clean.length === 10 && clean.startsWith("3")) {
+        clean = "57" + clean;
+      }
+      if (clean.length >= 10) {
+        phoneParam = `phone=${clean}&`;
+      }
+    }
+    const url = `https://api.whatsapp.com/send?${phoneParam}text=${encodeURIComponent(text)}`;
     window.open(url, "_blank");
   };
 
@@ -156,6 +187,15 @@ export const MagicLinkModal: React.FC<MagicLinkModalProps> = ({
                       <span>Enviar WhatsApp</span>
                     </button>
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={handleCopyMessage}
+                    className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold flex items-center justify-center gap-1.5 text-xs transition-colors border"
+                  >
+                    {messageCopied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{messageCopied ? "¡Mensaje de WhatsApp Copiado!" : "Copiar Mensaje Completo para WhatsApp"}</span>
+                  </button>
 
                   <button
                     type="button"
