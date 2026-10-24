@@ -4,7 +4,8 @@ import { db, Animal, KardexRecord } from "@/lib/db";
 import { GateraCat } from "@/lib/gateraData";
 import { exportGateraExcel } from "@/lib/excelGenerator";
 import { importExcelFile } from "@/lib/excelImporter";
-import { OFFICIAL_GATERA_LOCATIONS } from "@/lib/gateraLocations";
+import { OFFICIAL_GATERA_LOCATIONS, isDeceased } from "@/lib/gateraLocations";
+import { OFFICIAL_GATERA_COLORS } from "@/lib/gateraColors";
 import {
   FileSpreadsheet,
   Download,
@@ -112,7 +113,10 @@ export const PlanillaEditorTab: React.FC<PlanillaEditorTabProps> = ({
   }, [gateraList]);
 
   const uniqueColors = useMemo(() => {
-    return Array.from(new Set(gateraList.map((c) => c.color).filter(Boolean))).sort();
+    const list = Array.from(
+      new Set([...OFFICIAL_GATERA_COLORS, ...gateraList.map((c) => c.color).filter(Boolean)])
+    );
+    return list.sort();
   }, [gateraList]);
 
   const uniqueDiagnoses = useMemo(() => {

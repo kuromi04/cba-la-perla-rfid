@@ -145,6 +145,7 @@ export const OFFICIAL_GATERA_LOCATIONS: string[] = [
   "PREPARACIÓN",
   "REMITIDO",
   "FUGADO",
+  "FALLECIDO",
 ];
 
 // Categorías para filtrado rápido y visualización organizada en la interfaz
@@ -189,7 +190,25 @@ export const GATERA_LOCATION_GROUPS = [
     prefix: "JAULA",
     badge: "📦 Jaulas",
   },
+  {
+    name: "Fallecidos",
+    prefix: "FALLECIDO",
+    badge: "🕊️ Fallecidos",
+  },
 ];
+
+/**
+ * Función de utilidad para comprobar si un felino o ubicación corresponde a un animal fallecido
+ */
+export function isDeceased(item?: { location?: string; ubicacion?: string; status?: string } | string | null): boolean {
+  if (!item) return false;
+  if (typeof item === "string") {
+    return item.trim().toUpperCase() === "FALLECIDO";
+  }
+  const loc = (item.location || item.ubicacion || "").trim().toUpperCase();
+  const stat = (item.status || "").trim().toLowerCase();
+  return loc === "FALLECIDO" || stat === "fallecido";
+}
 
 /**
  * Obtiene todas las ubicaciones conocidas:

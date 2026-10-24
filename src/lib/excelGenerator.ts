@@ -326,8 +326,15 @@ export async function exportGateraExcel() {
   const cats = await db.gateraRecords.toArray();
   const workbook = XLSX.utils.book_new();
 
-  // Hoja 1: CENSO GATERA (Estructura Fiel de las 24 Columnas del Archivo Maestro)
-  const censoRows = cats.map((c) => ({
+  // Hoja 1: CENSO GATERA (Felinos Activos - Estructura Fiel de las 24 Columnas del Archivo Maestro)
+  const activeCats = cats.filter(
+    (c) => c.ubicacion?.toUpperCase().trim() !== "FALLECIDO" && (c as any).status?.toLowerCase().trim() !== "fallecido"
+  );
+  const deceasedCats = cats.filter(
+    (c) => c.ubicacion?.toUpperCase().trim() === "FALLECIDO" || (c as any).status?.toLowerCase().trim() === "fallecido"
+  );
+
+  const censoRows = activeCats.map((c) => ({
     "N° animal": c.nroAnimal || "",
     "Nº CANIL": c.ubicacion,
     "MICROCHIP (MC)": c.microchip,
@@ -382,8 +389,8 @@ export async function exportGateraExcel() {
   ];
   XLSX.utils.book_append_sheet(workbook, wsCenso, "CENSO");
 
-  // Hoja 2: PLAN TTO OCTUBRE GATERA
-  const ttoRows = cats
+  // Hoja 2: PLAN TTO OCTUBRE GATERA (Exclusivo Felinos Activos)
+  const ttoRows = activeCats
     .filter((c) => c.medicacion && c.medicacion !== "Ninguno")
     .map((c) => ({
       "CANIL": c.ubicacion,
@@ -399,8 +406,8 @@ export async function exportGateraExcel() {
   const wsTto = XLSX.utils.json_to_sheet(ttoRows);
   XLSX.utils.book_append_sheet(workbook, wsTto, "PLAN TTO OCTUBRE");
 
-  // Hoja 3: PLAN SANITARIO FELINO
-  const sanRows = cats.map((c) => ({
+  // Hoja 3: PLAN SANITARIO FELINO (Felinos Activos)
+  const sanRows = activeCats.map((c) => ({
     "CANIL": c.ubicacion,
     "MICROCHIP (MC)": c.microchip,
     "HISTORIA CLINICA (HC)": c.hc,
@@ -412,7 +419,84 @@ export async function exportGateraExcel() {
   const wsSan = XLSX.utils.json_to_sheet(sanRows);
   XLSX.utils.book_append_sheet(workbook, wsSan, "PLAN SANITARIO");
 
+  // Hoja 4: CONTROL DE FELINOS FALLECIDOS (Preserva datos históricos completos)
+  if (deceasedCats.length > 0) {
+    const fallecidosRows = deceasedCats.map((c) => ({
+      "N° animal": c.nroAnimal || "",
+      "HISTORIA CLINICA (HC)": c.hc,
+      "MICROCHIP (MC)": c.microchip,
+      "NOMBRE / DESCRIPCIÓN": c.nombre || c.descripcion || "S/N",
+      "SEXO": c.sexo,
+      "RAZA": c.raza || "DPC",
+      "COLOR": c.color || "",
+      "ÚLTIMA UBICACIÓN PREVIA": (c as any).ubicacionPrevia || "GATERA",
+      "FECHA FALLECIMIENTO": (c as any).fechaFallecimiento || new Date().toISOString().split("T")[0],
+      "CAUSA / DIAGNÓSTICO": (c as any).causaFallecimiento || c.observacionesMedicas || "Sin causa especificada",
+      "MÉDICO VETERINARIO": c.medicoVeterinario || "Dra. Jenny Zapata Calle",
+    }));
+    const wsFallecidos = XLSX.utils.json_to_sheet(fallecidosRows);
+    wsFallecidos["!cols"] = [
+      { wch: 10 },
+      { wch: 14 },
+      { wch: 22 },
+      { wch: 30 },
+      { wch: 10 },
+      { wch: 12 },
+      { wch: 26 },
+      { wch: 22 },
+      { wch: 20 },
+      { wch: 40 },
+      { wch: 30 },
+    ];
+    XLSX.utils.book_append_sheet(workbook, wsFallecidos, "CONTROL FALLECIDOS");
+  }
+
   const today = new Date().toISOString().split("T")[0];
   XLSX.writeFile(workbook, `Plan_de_manejo_GATERA_${today}.xlsx`);
+}
+
+/**
+ * Exportar exclusivamente el Registro y Control de Felinos Fallecidos en Excel (.xlsx)
+ */
+export async function exportFallecidosExcel() {
+  const cats = await db.gateraRecords.toArray();
+  const deceasedCats = cats.filter(
+    (c) => c.ubicacion?.toUpperCase().trim() === "FALLECIDO" || (c as any).status?.toLowerCase().trim() === "fallecido"
+  );
+
+  const workbook = XLSX.utils.book_new();
+
+  const rows = deceasedCats.map((c, idx) => ({
+    "N°": idx + 1,
+    "HISTORIA CLINICA (HC)": c.hc,
+    "MICROCHIP (MC)": c.microchip,
+    "NOMBRE FELINO": c.nombre || "S/N",
+    "SEXO": c.sexoCode || (c.sexo === "hembra" ? "HFA" : "MFA"),
+    "RAZA": c.raza || "DPC",
+    "COLOR (COLUMNA H)": c.color || "",
+    "ÚLTIMA UBICACIÓN PREVIA": (c as any).ubicacionPrevia || "GATERA",
+    "FECHA FALLECIMIENTO": (c as any).fechaFallecimiento || new Date().toISOString().split("T")[0],
+    "CAUSA DE DEFUNCIÓN / OBSERVACIONES": (c as any).causaFallecimiento || c.observacionesMedicas || "Sin observaciones registradas",
+    "MÉDICO VETERINARIO RESPONSABLE": c.medicoVeterinario || "Dra. Jenny Zapata Calle",
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(rows.length > 0 ? rows : [{ "INFORMACIÓN": "No hay felinos registrados como fallecidos actualmente." }]);
+  ws["!cols"] = [
+    { wch: 6 },
+    { wch: 16 },
+    { wch: 22 },
+    { wch: 26 },
+    { wch: 10 },
+    { wch: 12 },
+    { wch: 28 },
+    { wch: 24 },
+    { wch: 22 },
+    { wch: 45 },
+    { wch: 32 },
+  ];
+
+  XLSX.utils.book_append_sheet(workbook, ws, "FALLECIDOS");
+  const today = new Date().toISOString().split("T")[0];
+  XLSX.writeFile(workbook, `CONTROL_FALLECIDOS_GATERA_${today}.xlsx`);
 }
 

@@ -18,6 +18,7 @@ import {
   Scissors,
 } from "lucide-react";
 import { OFFICIAL_GATERA_LOCATIONS, getAllGateraLocations } from "@/lib/gateraLocations";
+import { OFFICIAL_GATERA_COLORS, POPULAR_GATERA_COLORS } from "@/lib/gateraColors";
 
 interface RegisterNewAnimalModalProps {
   isOpen: boolean;
@@ -194,7 +195,10 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
         breed: `${formattedRaza} - ${formattedColor}`,
         gender,
         location: formattedLocation,
-        status: estadoSalud.toLowerCase().includes("delicado") ? "cuarentena" : "activo",
+        status: formattedLocation === "FALLECIDO" ? "fallecido" : (estadoSalud.toLowerCase().includes("delicado") ? "cuarentena" : "activo"),
+        fechaFallecimiento: formattedLocation === "FALLECIDO" ? nowIso : undefined,
+        causaFallecimiento: formattedLocation === "FALLECIDO" ? (compiledNotes || "Reportado como fallecido en registro") : undefined,
+        ubicacionPrevia: formattedLocation === "FALLECIDO" ? (existingAnimal?.location || "GATERA") : undefined,
         hc: formattedHc,
         isFeral,
         color: formattedColor,
@@ -223,6 +227,10 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
       const gateraEntry: GateraCat = {
         id: existingGatera?.id,
         ubicacion: formattedLocation, // Columna B
+        status: formattedLocation === "FALLECIDO" ? "fallecido" : "activo",
+        fechaFallecimiento: formattedLocation === "FALLECIDO" ? nowIso : undefined,
+        causaFallecimiento: formattedLocation === "FALLECIDO" ? (compiledNotes || "Reportado como fallecido en registro") : undefined,
+        ubicacionPrevia: formattedLocation === "FALLECIDO" ? (existingGatera?.ubicacion || existingAnimal?.location || "GATERA") : undefined,
         microchip: cleanChip,
         shortChip,
         hc: formattedHc,
@@ -305,17 +313,24 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
         felvStatus,
       };
 
-      if (existingCensus?.id) {
-        await db.census.update(existingCensus.id, censusPayload);
-        // Depurar duplicados residuales
-        const leftovers = allCensus.filter(
-          (c) => c.id !== existingCensus.id && (c.microchip.trim().toUpperCase() === cleanChip || cleanChip.endsWith(c.microchip.trim().toUpperCase()))
-        );
-        for (const left of leftovers) {
-          if (left.id) await db.census.delete(left.id);
+      if (formattedLocation === "FALLECIDO") {
+        // REGLA: Los felinos fallecidos se descuentan del censo activo inmediatamente
+        if (existingCensus?.id) {
+          await db.census.delete(existingCensus.id);
         }
       } else {
-        await db.census.add(censusPayload);
+        if (existingCensus?.id) {
+          await db.census.update(existingCensus.id, censusPayload);
+          // Depurar duplicados residuales
+          const leftovers = allCensus.filter(
+            (c) => c.id !== existingCensus.id && (c.microchip.trim().toUpperCase() === cleanChip || cleanChip.endsWith(c.microchip.trim().toUpperCase()))
+          );
+          for (const left of leftovers) {
+            if (left.id) await db.census.delete(left.id);
+          }
+        } else {
+          await db.census.add(censusPayload);
+        }
       }
 
       // 4. Si tiene tratamiento activo prescrito por Médico/Admin, registrarlo en el Kardex
@@ -364,17 +379,9 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
       </datalist>
 
       <datalist id="colors-list">
-        <option value="NEGRO" />
-        <option value="BLANCO" />
-        <option value="ATIGRADO" />
-        <option value="ATIGRADO CON BLANCO" />
-        <option value="NEGRO CON BLANCO" />
-        <option value="ROMANO" />
-        <option value="NARANJA / AMARILLO" />
-        <option value="CAREY" />
-        <option value="CALICÓ" />
-        <option value="GRIS / AZUL RUSO" />
-        <option value="SIAMÉS" />
+        {OFFICIAL_GATERA_COLORS.map((col) => (
+          <option key={col} value={col} />
+        ))}
       </datalist>
 
       <datalist id="vets-list">
@@ -497,11 +504,17 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
                   { label: "⚠️ Ferales", prefix: "FERAL" },
                   { label: "🧪 VIF/FeLV", prefix: "VIF" },
                   { label: "📦 Jaulas", prefix: "JAULA" },
+                  { label: "🕊️ Fallecidos", prefix: "FALLECIDO" },
                 ].map((cat) => (
                   <button
                     key={cat.prefix}
                     type="button"
-                    onClick={() => setSelectedLocCategory(cat.prefix)}
+                    onClick={() => {
+                      setSelectedLocCategory(cat.prefix);
+                      if (cat.prefix === "FALLECIDO") {
+                        setLocation("FALLECIDO");
+                      }
+                    }}
                     className={`px-2 py-1 rounded-lg text-[10px] font-black transition-all ${
                       selectedLocCategory === cat.prefix
                         ? "bg-indigo-600 text-white shadow-xs"
@@ -518,6 +531,9 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
                 {allLocations
                   .filter((loc) => {
                     const up = loc.toUpperCase();
+                    if (selectedLocCategory === "FALLECIDO") {
+                      return up.includes("FALLECIDO");
+                    }
                     if (selectedLocCategory === "VIF") {
                       return up.includes("VIF") || up.includes("VILEF") || up.includes("FELV") || up.includes("LEUCEMIA") || up.includes("POSITIVO");
                     }
@@ -606,17 +622,36 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
               />
             </div>
             <div>
-              <label className="font-bold text-slate-700 block mb-1 text-[10px] uppercase">
-                COLOR / SEÑAS:
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="font-bold text-slate-700 text-[10px] uppercase">
+                  COLOR (COLUMNA H): <span className="text-purple-700 font-normal">89 Colores Oficiales</span>
+                </label>
+              </div>
               <input
                 type="text"
                 list="colors-list"
                 value={color}
-                onChange={(e) => setColor(e.target.value)}
-                placeholder="Ej: Negro, Atigrado, Carey..."
-                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-medium uppercase"
+                onChange={(e) => setColor(e.target.value.toUpperCase())}
+                placeholder="Ej: TABBY AMARILLO, NEGRO, CAREY..."
+                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold uppercase text-slate-900 focus:bg-white focus:ring-2 focus:ring-purple-400"
               />
+              {/* Pills rápidos de colores más frecuentes del Excel */}
+              <div className="flex flex-wrap gap-1 mt-1 max-h-16 overflow-y-auto p-1 bg-slate-100 rounded-lg">
+                {POPULAR_GATERA_COLORS.slice(0, 10).map((cName) => (
+                  <button
+                    key={cName}
+                    type="button"
+                    onClick={() => setColor(cName)}
+                    className={`px-1.5 py-0.5 rounded text-[9px] font-bold transition-all ${
+                      color === cName
+                        ? "bg-purple-700 text-white"
+                        : "bg-white text-slate-700 border border-slate-200 hover:bg-purple-50"
+                    }`}
+                  >
+                    {cName}
+                  </button>
+                ))}
+              </div>
             </div>
             <div>
               <label className="font-bold text-slate-700 block mb-1 text-[10px] uppercase">

@@ -28,7 +28,8 @@ import { CanilCardModal } from "./CanilCardModal";
 import { RegisterNewAnimalModal } from "./RegisterNewAnimalModal";
 import { ParsedClinicalIntent } from "@/lib/aiParser";
 import { StaffMember } from "@/lib/staff";
-import { OFFICIAL_GATERA_LOCATIONS, getAllGateraLocations } from "@/lib/gateraLocations";
+import { OFFICIAL_GATERA_LOCATIONS, getAllGateraLocations, isDeceased } from "@/lib/gateraLocations";
+import { OFFICIAL_GATERA_COLORS } from "@/lib/gateraColors";
 
 interface ScannerTabProps {
   initialChip?: string;
@@ -252,6 +253,13 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
 
   const handleConfirmCensus = async () => {
     if (!currentAnimal) return;
+
+    // REGLA CLÍNICA: Los felinos fallecidos están exentos del censo activo diario
+    if (isDeceased(currentAnimal)) {
+      setFeedbackMessage("🕊️ Este felino está registrado como FALLECIDO. Permanece archivado en el Control de Bajas y está descontado del censo activo.");
+      return;
+    }
+
     const nowIso = new Date().toISOString();
     const cleanChip = currentAnimal.microchip.trim().toUpperCase();
     const allCensus = await db.census.toArray();
@@ -323,17 +331,42 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
     }
 
     const cleanChip = currentAnimal.microchip.trim();
+    const isFallecido = editLocation.toUpperCase().trim() === "FALLECIDO";
+    const nowIso = new Date().toISOString();
+    const previousLoc = currentAnimal.location || "GATERA";
 
-    // Actualizar ubicación en db.animals
+    // Actualizar ubicación y estado en db.animals
+    const animalUpdatePayload: Partial<Animal> = {
+      location: editLocation,
+      status: isFallecido ? "fallecido" : (currentAnimal.status === "fallecido" ? "activo" : currentAnimal.status || "activo"),
+      fechaFallecimiento: isFallecido ? nowIso : undefined,
+      causaFallecimiento: isFallecido ? (editPendientes || "Baja registrada en campo") : undefined,
+      ubicacionPrevia: isFallecido ? previousLoc : undefined,
+    };
+
     if (currentAnimal.id) {
-      await db.animals.update(currentAnimal.id, { location: editLocation });
+      await db.animals.update(currentAnimal.id, animalUpdatePayload);
     } else {
       const anim = await db.animals.where("microchip").equals(cleanChip).first();
       if (anim && anim.id) {
-        await db.animals.update(anim.id, { location: editLocation });
+        await db.animals.update(anim.id, animalUpdatePayload);
       }
     }
-    setCurrentAnimal({ ...currentAnimal, location: editLocation });
+    setCurrentAnimal({
+      ...currentAnimal,
+      location: editLocation,
+      status: isFallecido ? "fallecido" : "activo",
+    });
+
+    if (isFallecido) {
+      // Descontar inmediatamente del censo activo
+      const cRec = await db.census.where("microchip").equals(cleanChip).first();
+      if (cRec && cRec.id) await db.census.delete(cRec.id);
+
+      // Eliminar tareas de turno
+      const tasks = await db.shiftTasks.where("microchip").equals(cleanChip).toArray();
+      for (const t of tasks) if (t.id) await db.shiftTasks.delete(t.id);
+    }
 
     if (currentAnimal.species === "gato") {
       // Actualizar en db.gateraRecords
@@ -341,6 +374,10 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
       if (catRecord && catRecord.id) {
         await db.gateraRecords.update(catRecord.id, {
           ubicacion: editLocation,
+          status: isFallecido ? "fallecido" : "activo",
+          fechaFallecimiento: isFallecido ? nowIso : undefined,
+          causaFallecimiento: isFallecido ? (editPendientes || "Baja registrada en campo") : undefined,
+          ubicacionPrevia: isFallecido ? previousLoc : undefined,
           medicacion: editMedication,
           pendientes: editPendientes,
         });
@@ -381,8 +418,24 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
       }
     }
 
+    // Sincronizar en Supabase si está disponible
+    if (typeof window !== "undefined" && navigator.onLine) {
+      try {
+        const { syncAnimalToSupabase } = await import("@/lib/supabase");
+        syncAnimalToSupabase({
+          ...currentAnimal,
+          location: editLocation,
+          status: isFallecido ? "fallecido" : "activo",
+        }).catch(console.warn);
+      } catch {}
+    }
+
     setIsEditing(false);
-    setFeedbackMessage("💾 Datos del animal actualizados y sincronizados en la planilla.");
+    setFeedbackMessage(
+      isFallecido
+        ? "🕊️ Felino registrado como FALLECIDO. Se conserva su historial clínico en el control oficial y se descuenta del censo activo."
+        : "💾 Datos del animal actualizados y sincronizados en la planilla."
+    );
   };
 
   const handleExtendTreatment = async (kardexId?: number, extraDays: number = 7) => {
@@ -596,6 +649,20 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
                     </div>
                   </div>
                 )}
+
+                {isDeceased(currentAnimal) && (
+                  <div className="p-3.5 bg-slate-900 border-2 border-slate-700 rounded-2xl flex items-center gap-3 text-white animate-in fade-in">
+                    <span className="text-2xl shrink-0">🕊️</span>
+                    <div>
+                      <span className="font-black text-xs uppercase tracking-wide block text-slate-100">
+                        REGISTRO DE FELINO FALLECIDO (BAJA EN CENSO)
+                      </span>
+                      <span className="text-[11px] font-medium text-slate-300">
+                        Este animal está descontado de la población activa del censo. Sus datos clínicos, microchip y causas de defunción permanecen guardados en el control oficial.
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })()}
@@ -756,9 +823,21 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
                     className="w-full p-2.5 bg-white border border-amber-300 rounded-xl font-bold uppercase"
                     placeholder="Ej. CUARENTENA 1, UPH 11, HOSPITAL 2... (o escribe una nueva)"
                   />
-                  <span className="text-[10px] text-amber-700 font-medium block mt-1">
-                    💡 Puedes elegir de la lista o <strong>escribir cualquier ubicación nueva</strong>.
-                  </span>
+                  <div className="flex items-center justify-between gap-2 mt-1">
+                    <span className="text-[10px] text-amber-700 font-medium">
+                      💡 Elige de la lista o <strong>escribe una nueva</strong>.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditLocation("FALLECIDO");
+                        if (!editPendientes) setEditPendientes("Felino fallecido en albergue");
+                      }}
+                      className="px-2 py-0.5 bg-slate-900 hover:bg-black text-rose-300 rounded-lg text-[10px] font-black shrink-0 transition-all"
+                    >
+                      🕊️ Marcar FALLECIDO
+                    </button>
+                  </div>
                   <datalist id="scanner-locations-list">
                     {locationsList.map((loc) => (
                       <option key={loc} value={loc} />

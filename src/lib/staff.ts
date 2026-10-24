@@ -76,22 +76,39 @@ export async function getAllStaff(): Promise<StaffMember[]> {
     } catch {}
   }
 
-  // Sincronizar con Supabase en la nube para que todos los dispositivos vean al personal
+  // Sincronizar con Supabase en la nube para que todos los dispositivos vean al personal (Sincronización Bidireccional)
   if (typeof window !== "undefined" && navigator.onLine) {
     try {
-      const { fetchStaffFromSupabase } = await import("./supabase");
+      const { fetchStaffFromSupabase, syncStaffToSupabase } = await import("./supabase");
       const cloudStaff = await fetchStaffFromSupabase();
+      
+      const cloudMap = new Map<string, StaffMember>();
       if (cloudStaff && cloudStaff.length > 0) {
-        // Combinar evitando duplicados
-        const staffMap = new Map<string, StaffMember>();
-        list.forEach((s) => staffMap.set(s.id, s));
-        cloudStaff.forEach((s) => staffMap.set(s.id, s));
-        list = Array.from(staffMap.values());
+        cloudStaff.forEach((s) => cloudMap.set(s.id, s));
+      }
 
-        // Cachear en Dexie para disponibilidad offline
-        for (const s of cloudStaff) {
-          await db.staff.put(s).catch(() => {});
+      // SUBIR automáticamente a Supabase los empleados locales que aún no estén en la nube
+      // (por ejemplo, si se registraron sin conexión o antes de conectar Supabase en ese móvil)
+      for (const localMember of list) {
+        if (!cloudMap.has(localMember.id)) {
+          try {
+            await syncStaffToSupabase(localMember);
+            cloudMap.set(localMember.id, localMember);
+          } catch (e) {
+            console.warn("Error auto-subiendo personal a Supabase:", localMember.name, e);
+          }
         }
+      }
+
+      // Unir lista local con lista de la nube
+      const staffMap = new Map<string, StaffMember>();
+      list.forEach((s) => staffMap.set(s.id, s));
+      cloudMap.forEach((s, id) => staffMap.set(id, s));
+      list = Array.from(staffMap.values());
+
+      // Cachear en Dexie para disponibilidad offline
+      for (const s of list) {
+        await db.staff.put(s).catch(() => {});
       }
     } catch (err) {
       console.warn("Supabase staff sync non-blocking error:", err);

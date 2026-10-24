@@ -44,6 +44,12 @@ export interface GateraCat {
   vacunaLeucemia?: string;
   vacunaRabia?: string;
   desparasitante?: string;
+
+  // Control de Bajas y Defunciones
+  status?: string;
+  fechaFallecimiento?: string;
+  causaFallecimiento?: string;
+  ubicacionPrevia?: string;
 }
 
 export const GATERA_CATS_DATA: GateraCat[] = [

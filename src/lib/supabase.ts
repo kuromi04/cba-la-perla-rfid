@@ -432,13 +432,17 @@ export async function syncAnimalToSupabase(animal: Animal): Promise<boolean> {
   if (!client) return false;
 
   try {
+    const isFallecido =
+      animal.location?.toUpperCase().trim() === "FALLECIDO" ||
+      animal.status?.toLowerCase().trim() === "fallecido";
+
     const payload = {
       microchip: animal.microchip,
       name: animal.name,
       species: "gato",
       breed: animal.breed || "DPC",
       sex: animal.sexoCode?.startsWith("H") ? "hembra" : "macho",
-      status: "activo",
+      status: isFallecido ? "fallecido" : (animal.status || "activo"),
       notes: animal.notes || animal.observacionesMedicas,
       retroviral_status: animal.retroviralStatus || null,
       vif_status: animal.vifStatus || null,
@@ -459,6 +463,9 @@ export async function syncAnimalToSupabase(animal: Animal): Promise<boolean> {
         retroviralStatus: animal.retroviralStatus,
         vifStatus: animal.vifStatus,
         felvStatus: animal.felvStatus,
+        fechaFallecimiento: animal.fechaFallecimiento,
+        causaFallecimiento: animal.causaFallecimiento,
+        ubicacionPrevia: animal.ubicacionPrevia,
       },
       updated_at: new Date().toISOString(),
     };

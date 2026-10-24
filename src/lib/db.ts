@@ -43,6 +43,9 @@ export interface Animal {
   retroviralStatus?: "NEGATIVO" | "VIF_POSITIVO" | "FELV_POSITIVO" | "DOBLE_POSITIVO" | "PENDIENTE";
   vifStatus?: "POSITIVO" | "NEGATIVO" | "PENDIENTE";
   felvStatus?: "POSITIVO" | "NEGATIVO" | "PENDIENTE";
+  fechaFallecimiento?: string;
+  causaFallecimiento?: string;
+  ubicacionPrevia?: string;
 }
 
 export interface KardexRecord {
@@ -506,6 +509,14 @@ export async function generateTodayShiftTasks(): Promise<ShiftTask[]> {
 
   for (let idx = 0; idx < gateraCats.length; idx++) {
     const cat = gateraCats[idx];
+    // REGLA CLÍNICA: Los felinos fallecidos están exentos de tareas de turno y medicación
+    if (
+      cat.ubicacion?.toUpperCase().trim() === "FALLECIDO" ||
+      (cat as any).status?.toLowerCase().trim() === "fallecido"
+    ) {
+      continue;
+    }
+
     const kardexItem = await db.kardex.where("microchip").equals(cat.microchip).first();
 
     // 1. Tareas de Medicación

@@ -41,15 +41,21 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const [specialty, setSpecialty] = useState("");
   const [phone, setPhone] = useState("");
 
-  const refreshStaff = async () => {
+  const refreshStaff = async (isManual = false) => {
     setLoading(true);
-    const list = await getAllStaff();
-    setStaffList(list);
-    setLoading(false);
-
-    // Si la lista está vacía, llevar directamente a la pestaña de registro
-    if (list.length === 0) {
-      setActiveTab("registro");
+    try {
+      const list = await getAllStaff();
+      setStaffList(list);
+      if (isManual) {
+        setFeedback(`☁️ Nube sincronizada: ${list.length} miembros de personal actualizados.`);
+        setTimeout(() => setFeedback(null), 3000);
+      }
+      // Si la lista está vacía, llevar directamente a la pestaña de registro
+      if (list.length === 0) {
+        setActiveTab("registro");
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -170,7 +176,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
               </span>
               <button
                 type="button"
-                onClick={refreshStaff}
+                onClick={() => refreshStaff(true)}
                 disabled={loading}
                 className="text-[11px] text-emerald-700 hover:text-emerald-900 font-bold flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded-lg transition-all"
                 title="Sincronizar personal desde Supabase"
