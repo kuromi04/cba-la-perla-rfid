@@ -209,41 +209,59 @@ export const BatchScannerModal: React.FC<BatchScannerModalProps> = ({
     const nowIso = new Date().toISOString();
     const operatorName = currentUser?.name || "Operario W91A (Censo Masivo)";
 
-    const censusEntries = validFound.map((item) => ({
-      microchip: item.animal!.microchip,
-      animalName: item.animal!.name,
-      species: item.animal!.species,
-      location: applyLocationChange && batchLocation ? batchLocation.trim().toUpperCase() : item.details?.location || item.animal!.location,
-      scannedAt: nowIso,
-      scannedBy: operatorName,
-      treatmentCount: item.details?.hasActiveTreatment ? 1 : 0,
-      area: item.animal!.species === "gato" ? ("gatera" as const) : ("caninos" as const),
-    }));
+    for (const item of validFound) {
+      const chip = item.animal!.microchip;
+      const targetLoc = applyLocationChange && batchLocation ? batchLocation.trim().toUpperCase() : item.details?.location || item.animal!.location;
+      const area = item.animal!.species === "gato" ? ("gatera" as const) : ("caninos" as const);
+      const treatmentCount = item.details?.hasActiveTreatment ? 1 : 0;
 
-    await db.census.bulkAdd(censusEntries);
+      const existing = await db.census.where("microchip").equals(chip).first();
+      if (existing?.id) {
+        await db.census.update(existing.id, {
+          animalName: item.animal!.name,
+          species: item.animal!.species,
+          location: targetLoc,
+          scannedAt: nowIso,
+          scannedBy: operatorName,
+          treatmentCount,
+          area,
+        });
+      } else {
+        await db.census.add({
+          microchip: chip,
+          animalName: item.animal!.name,
+          species: item.animal!.species,
+          location: targetLoc,
+          scannedAt: nowIso,
+          scannedBy: operatorName,
+          treatmentCount,
+          area,
+        });
+      }
 
-    // Si se activó cambio de ubicación masivo, actualizar ubicación
-    if (applyLocationChange && batchLocation) {
-      const targetLoc = batchLocation.trim().toUpperCase();
-      for (const item of validFound) {
-        if (item.animal!.id) {
-          await db.animals.update(item.animal!.id, { location: targetLoc });
-        }
+      if (item.animal!.id) {
+        await db.animals.update(item.animal!.id, {
+          lastCensusDate: nowIso,
+          ...(applyLocationChange && batchLocation ? { location: targetLoc } : {}),
+        });
+      }
+
+      if (applyLocationChange && batchLocation) {
         if (item.animal!.species === "gato") {
-          const cat = await db.gateraRecords.where("microchip").equals(item.animal!.microchip).first();
+          const cat = await db.gateraRecords.where("microchip").equals(chip).first();
           if (cat?.id) await db.gateraRecords.update(cat.id, { ubicacion: targetLoc });
         } else {
-          const dog = await db.shelterRecords.where("microchip").equals(item.animal!.microchip).first();
+          const dog = await db.shelterRecords.where("microchip").equals(chip).first();
           if (dog?.id) await db.shelterRecords.update(dog.id, { ubicacion: targetLoc });
         }
       }
     }
 
-    setFeedback(`🎉 ¡Censo Masivo Registrado! Se verificaron ${censusEntries.length} animales exitosamente.`);
+    setFeedback(`🎉 ¡Censo Masivo Registrado! Se verificaron ${validFound.length} animales exitosamente.`);
     setIsProcessing(false);
 
     if (onBatchProcessed) {
-      onBatchProcessed({ total: matchedItems.length, censused: censusEntries.length, medicated: 0 });
+      onBatchProcessed({ total: matchedItems.length, censused: validFound.length, medicated: 0 });
     }
   };
 

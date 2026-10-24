@@ -239,6 +239,13 @@ export async function initializeDatabaseIfEmpty(forceReset: boolean = false) {
   // Inserción de Felinos Reales (Gatera)
   for (const cat of GATERA_CATS_DATA) {
     const chip = cat.microchip.trim();
+    const isFeralCat = Boolean(
+      cat.isFeral ||
+      (cat.pendientes && cat.pendientes.toUpperCase().includes("FERAL")) ||
+      (cat.descripcion && cat.descripcion.toUpperCase().includes("FERAL"))
+    );
+    cat.isFeral = isFeralCat;
+
     if (!seenChips.has(chip)) {
       seenChips.add(chip);
 
@@ -253,7 +260,7 @@ export async function initializeDatabaseIfEmpty(forceReset: boolean = false) {
         status: "activo",
         notes: `${cat.pendientes}. HC: ${cat.hc}`,
         hc: cat.hc,
-        isFeral: cat.isFeral,
+        isFeral: isFeralCat,
         color: cat.color,
       });
     }
@@ -575,4 +582,74 @@ export async function generateTodayShiftTasks(): Promise<ShiftTask[]> {
 
   await db.shiftTasks.bulkAdd(tasksToInsert);
   return await db.shiftTasks.toArray();
+}
+
+/**
+ * Depura la población de Gatera para iniciar o consolidar un censo nuevo.
+ * Conserva:
+ *  1. Felinos censados/actualizados (registrados en db.census con area === 'gatera').
+ *  2. Felinos clasificados como FERALES (isFeral === true o marca FERAL) -> 100% PROTEGIDOS.
+ * Elimina:
+ *  - Todos los felinos de Gatera que NO fueron verificados en el censo actual y NO son ferales.
+ */
+export async function purgeObsoleteGateraRecords(): Promise<{
+  totalBefore: number;
+  preservedCensused: number;
+  preservedFeral: number;
+  deletedCount: number;
+}> {
+  const allCatsInGatera = await db.gateraRecords.toArray();
+  const allCatAnimals = await db.animals.where("species").equals("gato").toArray();
+  const allCensusRecords = await db.census.where("area").equals("gatera").toArray();
+
+  // Conjunto de microchips censados en Gatera
+  const censusedChips = new Set(allCensusRecords.map((c) => c.microchip.trim()));
+
+  let preservedCensused = 0;
+  let preservedFeral = 0;
+  const chipsToDelete: string[] = [];
+
+  for (const cat of allCatsInGatera) {
+    const chip = cat.microchip.trim();
+    const isFeral = Boolean(
+      cat.isFeral ||
+      (cat.pendientes && cat.pendientes.toUpperCase().includes("FERAL")) ||
+      (cat.descripcion && cat.descripcion.toUpperCase().includes("FERAL"))
+    );
+    const isCensused = censusedChips.has(chip);
+
+    if (isFeral) {
+      preservedFeral++;
+    } else if (isCensused) {
+      preservedCensused++;
+    } else {
+      chipsToDelete.push(chip);
+    }
+  }
+
+  // 1. Eliminar de db.gateraRecords
+  for (const chip of chipsToDelete) {
+    await db.gateraRecords.where("microchip").equals(chip).delete();
+  }
+
+  // 2. Eliminar también de db.animals aquellos gatos no ferales y no censados
+  for (const chip of chipsToDelete) {
+    const animal = allCatAnimals.find((a) => a.microchip.trim() === chip);
+    if (animal?.id) {
+      const isFeralAnimal = Boolean(
+        animal.isFeral ||
+        (animal.notes && animal.notes.toUpperCase().includes("FERAL"))
+      );
+      if (!isFeralAnimal && !censusedChips.has(chip)) {
+        await db.animals.delete(animal.id);
+      }
+    }
+  }
+
+  return {
+    totalBefore: allCatsInGatera.length,
+    preservedCensused,
+    preservedFeral,
+    deletedCount: chipsToDelete.length,
+  };
 }

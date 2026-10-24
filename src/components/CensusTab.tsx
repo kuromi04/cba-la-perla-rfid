@@ -1,8 +1,23 @@
 "use client";
 import React, { useState, useEffect } from "react";
-import { db, CensusRecord, Animal, KardexRecord, resetDatabaseWithRealData } from "@/lib/db";
+import { db, CensusRecord, Animal, KardexRecord, resetDatabaseWithRealData, purgeObsoleteGateraRecords } from "@/lib/db";
 import { StaffMember } from "@/lib/staff";
-import { FileSpreadsheet, Download, RefreshCw, CheckCircle2, Search, Database, ShieldCheck, Layers, PlusCircle } from "lucide-react";
+import {
+  FileSpreadsheet,
+  Download,
+  RefreshCw,
+  CheckCircle2,
+  Search,
+  Database,
+  ShieldCheck,
+  Layers,
+  PlusCircle,
+  ShieldAlert,
+  Trash2,
+  AlertTriangle,
+  X,
+  Sparkles,
+} from "lucide-react";
 import * as XLSX from "xlsx";
 import { BatchScannerModal } from "./BatchScannerModal";
 import { RegisterNewAnimalModal } from "./RegisterNewAnimalModal";
@@ -19,6 +34,69 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
   const [isBatchOpen, setIsBatchOpen] = useState(false);
   const [isRegisterOpen, setIsRegisterOpen] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+
+  const [isPurgeModalOpen, setIsPurgeModalOpen] = useState(false);
+  const [purgeStats, setPurgeStats] = useState<{
+    totalCats: number;
+    censusedCats: number;
+    feralCats: number;
+    obsoleteCats: number;
+  }>({ totalCats: 0, censusedCats: 0, feralCats: 0, obsoleteCats: 0 });
+  const [isPurging, setIsPurging] = useState(false);
+
+  const openPurgeModal = async () => {
+    const allCats = await db.gateraRecords.toArray();
+    const allCensus = await db.census.where("area").equals("gatera").toArray();
+    const censusedChips = new Set(allCensus.map((c) => c.microchip.trim()));
+
+    let feralCount = 0;
+    let censusedCount = 0;
+    let obsoleteCount = 0;
+
+    for (const cat of allCats) {
+      const chip = cat.microchip.trim();
+      const isFeral = Boolean(
+        cat.isFeral ||
+        (cat.pendientes && cat.pendientes.toUpperCase().includes("FERAL")) ||
+        (cat.descripcion && cat.descripcion.toUpperCase().includes("FERAL"))
+      );
+      const isCensused = censusedChips.has(chip);
+
+      if (isFeral) {
+        feralCount++;
+      } else if (isCensused) {
+        censusedCount++;
+      } else {
+        obsoleteCount++;
+      }
+    }
+
+    setPurgeStats({
+      totalCats: allCats.length,
+      censusedCats: censusedCount,
+      feralCats: feralCount,
+      obsoleteCats: obsoleteCount,
+    });
+    setIsPurgeModalOpen(true);
+  };
+
+  const handleExecutePurge = async () => {
+    setIsPurging(true);
+    try {
+      const result = await purgeObsoleteGateraRecords();
+      await loadData();
+      setIsPurgeModalOpen(false);
+      setSyncMessage(
+        `🎉 Censo de Gatera depurado: Se conservaron ${result.preservedCensused} felinos censados y ${result.preservedFeral} felinos ferales protegidos. Se eliminaron ${result.deletedCount} registros no vigentes.`
+      );
+    } catch (err) {
+      console.error(err);
+      setSyncMessage("Error al depurar los registros de Gatera.");
+    } finally {
+      setIsPurging(false);
+      setTimeout(() => setSyncMessage(null), 6000);
+    }
+  };
 
   const loadData = async () => {
     let list = await db.census.orderBy("id").reverse().toArray();
@@ -195,6 +273,18 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
               <FileSpreadsheet className="w-4 h-4" />
               <span>Exportar (.xlsx)</span>
             </button>
+
+            {(!currentUser || currentUser.area === "gatera" || currentUser.role === "admin") && (
+              <button
+                type="button"
+                onClick={openPurgeModal}
+                className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-2xl text-xs font-black flex items-center gap-2 shadow-lg shadow-rose-600/25 active:scale-95 transition-all"
+                title="Depurar registros de Gatera que no se hayan actualizado en el censo, preservando 100% los felinos ferales"
+              >
+                <Trash2 className="w-4 h-4 text-rose-200" />
+                <span>Depurar Gatera (Nuevo Censo)</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -319,6 +409,113 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
           setTimeout(() => setSyncMessage(null), 4000);
         }}
       />
+
+      {/* Modal de Depuración de Censo Gatera (Preserva Ferales) */}
+      {isPurgeModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto animate-in fade-in">
+          <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl p-5 sm:p-6 space-y-4 my-auto border border-slate-200 animate-in zoom-in-95">
+            {/* Cabecera */}
+            <div className="flex items-center justify-between border-b pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 bg-rose-600 rounded-2xl text-white shadow-md shadow-rose-600/30">
+                  <ShieldAlert className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-900 text-base leading-tight">
+                    Depurar Gatera: Nuevo Censo
+                  </h3>
+                  <p className="text-[11px] text-slate-500 font-medium">
+                    Eliminar registros no actualizados preservando 100% felinos ferales
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPurgeModalOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Tarjetas de Auditoría y Métricas */}
+            <div className="grid grid-cols-2 gap-2 text-center text-xs">
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl">
+                <span className="text-[10px] uppercase font-bold text-slate-500 block">Total en Gatera</span>
+                <span className="text-2xl font-black text-slate-800">{purgeStats.totalCats}</span>
+                <span className="text-[9px] text-slate-400 block">población anterior</span>
+              </div>
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl">
+                <span className="text-[10px] uppercase font-black text-amber-800 block">🛡️ Felinos Ferales</span>
+                <span className="text-2xl font-black text-amber-900">{purgeStats.feralCats}</span>
+                <span className="text-[9px] text-amber-700 font-bold block">100% INTOCABLES</span>
+              </div>
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl">
+                <span className="text-[10px] uppercase font-bold text-emerald-700 block">Confirmados en Censo</span>
+                <span className="text-2xl font-black text-emerald-900">{purgeStats.censusedCats}</span>
+                <span className="text-[9px] text-emerald-600 font-bold block">permanecen activos</span>
+              </div>
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl">
+                <span className="text-[10px] uppercase font-bold text-rose-700 block">Obsoletos a Depurar</span>
+                <span className="text-2xl font-black text-rose-900">{purgeStats.obsoleteCats}</span>
+                <span className="text-[9px] text-rose-600 font-bold block">serán eliminados</span>
+              </div>
+            </div>
+
+            {/* Alerta de Bioseguridad y Protección Feral */}
+            <div className="p-3.5 bg-amber-50/80 border border-amber-300 rounded-2xl space-y-1.5 text-xs">
+              <div className="flex items-center gap-1.5 font-black text-amber-950 uppercase tracking-wide text-[11px]">
+                <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>Protocolo de Protección de Felinos Ferales:</span>
+              </div>
+              <p className="text-[11px] text-amber-900 leading-relaxed">
+                Los <strong>{purgeStats.feralCats} felinos ferales o reactivos NUNCA se eliminarán</strong>, independientemente de si fueron escaneados hoy o no. Su ficha, historial de manejo cauteloso y número de canil se preservan de manera inmutable.
+              </p>
+              <p className="text-[10px] text-slate-600 italic">
+                * Solo se purgarán los gatos que no tengan registro en este nuevo censo y que no sean ferales.
+              </p>
+            </div>
+
+            {/* Botones de Acción */}
+            <div className="space-y-2 pt-1">
+              <button
+                type="button"
+                onClick={handleExportExcel}
+                className="w-full py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all"
+              >
+                <Download className="w-4 h-4 text-slate-500" />
+                <span>Descargar Copia de Respaldo Excel Antes de Depurar</span>
+              </button>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsPurgeModalOpen(false)}
+                  disabled={isPurging}
+                  className="w-1/3 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-all"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExecutePurge}
+                  disabled={isPurging || purgeStats.obsoleteCats === 0}
+                  className="w-2/3 py-3 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 text-white font-black rounded-xl text-xs shadow-lg shadow-rose-600/30 flex items-center justify-center gap-2 active:scale-95 transition-all"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>
+                    {isPurging
+                      ? "DEPURANDO..."
+                      : purgeStats.obsoleteCats === 0
+                      ? "CENSO AL DÍA (0 PENDIENTES)"
+                      : `DEPURAR ${purgeStats.obsoleteCats} NO ACTUALIZADOS`}
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

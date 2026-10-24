@@ -245,15 +245,37 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
   const handleConfirmCensus = async () => {
     if (!currentAnimal) return;
 
-    await db.census.add({
-      microchip: currentAnimal.microchip,
-      animalName: currentAnimal.name,
-      species: currentAnimal.species,
-      location: currentAnimal.location,
-      scannedAt: new Date().toISOString(),
-      scannedBy: "Operario de Campo",
-      treatmentCount: shelterEntries.filter((e) => e.medicacion).length,
-    });
+    const nowIso = new Date().toISOString();
+    const existing = await db.census.where("microchip").equals(currentAnimal.microchip).first();
+    const area = currentAnimal.species === "gato" ? "gatera" : "caninos";
+    const treatmentCount = shelterEntries.filter((e) => e.medicacion).length;
+
+    if (existing?.id) {
+      await db.census.update(existing.id, {
+        animalName: currentAnimal.name,
+        species: currentAnimal.species,
+        location: currentAnimal.location,
+        scannedAt: nowIso,
+        scannedBy: currentUser?.name || "Operario de Campo",
+        treatmentCount,
+        area,
+      });
+    } else {
+      await db.census.add({
+        microchip: currentAnimal.microchip,
+        animalName: currentAnimal.name,
+        species: currentAnimal.species,
+        location: currentAnimal.location,
+        scannedAt: nowIso,
+        scannedBy: currentUser?.name || "Operario de Campo",
+        treatmentCount,
+        area,
+      });
+    }
+
+    if (currentAnimal.id) {
+      await db.animals.update(currentAnimal.id, { lastCensusDate: nowIso });
+    }
 
     setCensusConfirmed(true);
     setFeedbackMessage(`✅ Censo registrado: ${currentAnimal.name} verificado en ${currentAnimal.location}`);

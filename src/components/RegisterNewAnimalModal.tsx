@@ -128,28 +128,34 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
         compiledNotes = `[ANIMAL FERAL] ${compiledNotes}`.trim();
       }
 
-      // 1. Guardar en tabla central: db.animals
-      const newAnimal: Animal = {
+      // 1. Guardar o Actualizar en tabla central: db.animals
+      const existingAnimal = await db.animals.where("microchip").equals(cleanChip).first();
+      const finalAnimal: Animal = {
+        id: existingAnimal?.id,
         microchip: cleanChip,
         shortChip,
-        name: formattedName,
+        name: formattedName !== "S/N" ? formattedName : (existingAnimal?.name || "S/N"),
         species,
         breed: `${formattedBreed} - ${formattedColor}`,
         gender: gender.toLowerCase(),
         location: formattedLocation,
         status: isCuarentena ? "cuarentena" : status,
-        hc: formattedHc || undefined,
-        isFeral,
+        hc: formattedHc || existingAnimal?.hc || undefined,
+        isFeral: isFeral || existingAnimal?.isFeral || false,
         color: formattedColor,
-        notes: compiledNotes || undefined,
+        notes: compiledNotes || existingAnimal?.notes || undefined,
         lastCensusDate: nowIso,
       };
 
-      await db.animals.put(newAnimal);
+      if (existingAnimal?.id) {
+        await db.animals.update(existingAnimal.id, finalAnimal);
+      } else {
+        const newId = await db.animals.add(finalAnimal);
+        finalAnimal.id = newId;
+      }
 
-      // 2. Guardar en la Planilla correspondiente según su ubicación y especie
+      // 2. Guardar o Actualizar en la Planilla correspondiente según su ubicación y especie
       if (species === "perro") {
-        // En Caninos, determinar la sección por CDV o ubicación
         let caninoSection = "TRIAJE";
         if (isCDV) {
           caninoSection = "CDV";
@@ -159,57 +165,109 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
           caninoSection = "NOCHE";
         }
 
-        await db.shelterRecords.add({
-          section: caninoSection as any,
-          ubicacion: formattedLocation, // Columna B (Nº Canil)
-          microchip: cleanChip,
-          shortChip,
-          descripcion: `${formattedName} (${formattedBreed} - ${formattedColor})`,
-          medicacion: hasTreatment ? medication.trim() : "",
-          fechaFinal: hasTreatment ? `+${totalDoses} días` : "HNI",
-          tipo: "S",
-          sistema: hasTreatment ? system : "PREVENTIVO",
-          pendientes: compiledNotes || "INGRESO NUEVO CANIL",
-          // BRAVECTO EXCLUSIVO DE CANINOS
-          dosisBravecto: bravectoCanino.trim() || undefined,
-        });
+        const existingShelter = await db.shelterRecords.where("microchip").equals(cleanChip).first();
+        if (existingShelter?.id) {
+          await db.shelterRecords.update(existingShelter.id, {
+            section: caninoSection as any,
+            ubicacion: formattedLocation, // Columna B (Nº Canil)
+            shortChip,
+            descripcion: `${formattedName} (${formattedBreed} - ${formattedColor})`,
+            medicacion: hasTreatment ? medication.trim() : existingShelter.medicacion,
+            fechaFinal: hasTreatment ? `+${totalDoses} días` : existingShelter.fechaFinal,
+            tipo: "S",
+            sistema: hasTreatment ? system : existingShelter.sistema,
+            pendientes: compiledNotes || existingShelter.pendientes,
+            dosisBravecto: bravectoCanino.trim() || existingShelter.dosisBravecto,
+          });
+        } else {
+          await db.shelterRecords.add({
+            section: caninoSection as any,
+            ubicacion: formattedLocation, // Columna B (Nº Canil)
+            microchip: cleanChip,
+            shortChip,
+            descripcion: `${formattedName} (${formattedBreed} - ${formattedColor})`,
+            medicacion: hasTreatment ? medication.trim() : "",
+            fechaFinal: hasTreatment ? `+${totalDoses} días` : "HNI",
+            tipo: "S",
+            sistema: hasTreatment ? system : "PREVENTIVO",
+            pendientes: compiledNotes || "INGRESO NUEVO CANIL",
+            dosisBravecto: bravectoCanino.trim() || undefined,
+          });
+        }
       } else {
         // En Felinos (Gatera), Bravecto NUNCA se asigna
-        await db.gateraRecords.add({
-          ubicacion: formattedLocation, // Columna B (Nº Canil / Jaula)
-          microchip: cleanChip,
-          shortChip,
-          hc: formattedHc || shortChip.slice(-5),
-          nombre: formattedName,
-          raza: formattedBreed,
-          color: formattedColor,
-          sexo: (gender.toLowerCase() === "hembra" ? "hembra" : "macho") as "macho" | "hembra",
-          edad: age,
-          isFeral,
-          tipoIngreso: "RESGUARDO",
-          condicionCorporal: "3/5",
-          estadoSalud: isCuarentena ? "CUARENTENA" : "ESTABLE",
-          fechaFinal: hasTreatment ? `+${totalDoses} días` : "HNI",
-          tipo: "S",
-          descripcion: `${formattedName} (${formattedBreed} - ${formattedColor})`,
-          medicacion: hasTreatment ? medication.trim() : "",
-          sistema: hasTreatment ? system : "GENERAL",
-          pendientes: compiledNotes || "INGRESO NUEVO GATERA",
-          desparasitante: "AL DÍA (FELINO)", // No Bravecto para gatos
-        });
+        const existingGatera = await db.gateraRecords.where("microchip").equals(cleanChip).first();
+        if (existingGatera?.id) {
+          await db.gateraRecords.update(existingGatera.id, {
+            ubicacion: formattedLocation, // Columna B (Nº Canil / Jaula)
+            shortChip,
+            hc: formattedHc || existingGatera.hc || shortChip.slice(-5),
+            nombre: formattedName !== "S/N" ? formattedName : (existingGatera.nombre || "S/N"),
+            raza: formattedBreed,
+            color: formattedColor,
+            sexo: (gender.toLowerCase() === "hembra" ? "hembra" : "macho") as "macho" | "hembra",
+            edad: age,
+            isFeral: isFeral || existingGatera.isFeral || false,
+            condicionCorporal: existingGatera.condicionCorporal || "3/5",
+            estadoSalud: isCuarentena ? "CUARENTENA" : (existingGatera.estadoSalud || "ESTABLE"),
+            fechaFinal: hasTreatment ? `+${totalDoses} días` : existingGatera.fechaFinal,
+            tipo: "S",
+            descripcion: `${formattedName} (${formattedBreed} - ${formattedColor})`,
+            medicacion: hasTreatment ? medication.trim() : existingGatera.medicacion,
+            sistema: hasTreatment ? system : existingGatera.sistema,
+            pendientes: compiledNotes || existingGatera.pendientes,
+            desparasitante: "AL DÍA (FELINO)",
+          });
+        } else {
+          await db.gateraRecords.add({
+            ubicacion: formattedLocation, // Columna B (Nº Canil / Jaula)
+            microchip: cleanChip,
+            shortChip,
+            hc: formattedHc || shortChip.slice(-5),
+            nombre: formattedName,
+            raza: formattedBreed,
+            color: formattedColor,
+            sexo: (gender.toLowerCase() === "hembra" ? "hembra" : "macho") as "macho" | "hembra",
+            edad: age,
+            isFeral,
+            tipoIngreso: "RESGUARDO",
+            condicionCorporal: "3/5",
+            estadoSalud: isCuarentena ? "CUARENTENA" : "ESTABLE",
+            fechaFinal: hasTreatment ? `+${totalDoses} días` : "HNI",
+            tipo: "S",
+            descripcion: `${formattedName} (${formattedBreed} - ${formattedColor})`,
+            medicacion: hasTreatment ? medication.trim() : "",
+            sistema: hasTreatment ? system : "GENERAL",
+            pendientes: compiledNotes || "INGRESO NUEVO GATERA",
+            desparasitante: "AL DÍA (FELINO)",
+          });
+        }
       }
 
-      // 3. Registrar Censo Automático del Nuevo Ingreso
-      await db.census.add({
-        microchip: cleanChip,
-        animalName: formattedName,
-        species,
-        location: formattedLocation,
-        scannedAt: nowIso,
-        scannedBy: currentUser?.name || "Operario de Campo",
-        treatmentCount: hasTreatment ? 1 : 0,
-        area: species === "gato" ? "gatera" : "caninos",
-      });
+      // 3. Registrar o Actualizar en el Censo Automático
+      const existingCensus = await db.census.where("microchip").equals(cleanChip).first();
+      if (existingCensus?.id) {
+        await db.census.update(existingCensus.id, {
+          animalName: formattedName !== "S/N" ? formattedName : (existingCensus.animalName || "S/N"),
+          species,
+          location: formattedLocation,
+          scannedAt: nowIso,
+          scannedBy: currentUser?.name || "Operario de Campo",
+          treatmentCount: hasTreatment ? 1 : existingCensus.treatmentCount,
+          area: species === "gato" ? "gatera" : "caninos",
+        });
+      } else {
+        await db.census.add({
+          microchip: cleanChip,
+          animalName: formattedName,
+          species,
+          location: formattedLocation,
+          scannedAt: nowIso,
+          scannedBy: currentUser?.name || "Operario de Campo",
+          treatmentCount: hasTreatment ? 1 : 0,
+          area: species === "gato" ? "gatera" : "caninos",
+        });
+      }
 
       // 4. Si tiene tratamiento activo, registrarlo en el Kardex Clínico
       if (hasTreatment && medication.trim()) {
@@ -237,7 +295,7 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
         navigator.vibrate([100, 50, 150]);
       }
 
-      onAnimalRegistered(newAnimal);
+      onAnimalRegistered(finalAnimal);
       onClose();
     } catch (err: any) {
       console.error("Error al registrar nuevo animal:", err);
