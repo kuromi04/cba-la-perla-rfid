@@ -22,6 +22,8 @@ import {
   PlusCircle,
   Stethoscope,
   X,
+  Palette,
+  Check,
 } from "lucide-react";
 import { VoiceModal } from "./VoiceModal";
 import { AssignAnimalModal } from "./AssignAnimalModal";
@@ -59,6 +61,8 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
   const [editLocation, setEditLocation] = useState("");
   const [editMedication, setEditMedication] = useState("");
   const [editPendientes, setEditPendientes] = useState("");
+  const [editColor, setEditColor] = useState("");
+  const [isEditingColor, setIsEditingColor] = useState(false);
   const [locationsList, setLocationsList] = useState<string[]>(OFFICIAL_GATERA_LOCATIONS);
 
   // Estados para Instaurar y Editar Tratamientos Clínicos Directamente en Ficha
@@ -336,6 +340,77 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
     }
   };
 
+  const handleSaveColor = async (newColorRaw?: string) => {
+    if (!currentAnimal) return;
+    const isVetOrAdmin = currentUser?.role === "veterinario" || currentUser?.role === "admin";
+    if (!isVetOrAdmin) {
+      setFeedbackMessage("⛔ Regla de Oro: Solo Médicos Veterinarios y Administradores tienen autorización para modificar el color oficial.");
+      return;
+    }
+
+    const selectedColor = (newColorRaw !== undefined ? newColorRaw : editColor).trim().toUpperCase();
+    if (!selectedColor) {
+      setFeedbackMessage("Por favor especifica o selecciona un color.");
+      return;
+    }
+
+    const cleanChip = currentAnimal.microchip.trim().toUpperCase();
+    const newName = `FELINO ${selectedColor}`;
+
+    // 1. Actualizar en db.animals
+    if (currentAnimal.id) {
+      await db.animals.update(currentAnimal.id, { color: selectedColor, name: newName });
+    } else {
+      const anim = await db.animals.where("microchip").equals(cleanChip).first();
+      if (anim?.id) {
+        await db.animals.update(anim.id, { color: selectedColor, name: newName });
+      }
+    }
+
+    // 2. Actualizar en db.gateraRecords
+    const catRecord = await db.gateraRecords.where("microchip").equals(cleanChip).first();
+    if (catRecord?.id) {
+      await db.gateraRecords.update(catRecord.id, {
+        color: selectedColor,
+        nombre: newName,
+        descripcion: `${newName} (${catRecord.raza || "DPC"} - ${selectedColor})`,
+      });
+    }
+
+    // 3. Actualizar en db.census
+    const censusRecs = await db.census.where("microchip").equals(cleanChip).toArray();
+    for (const c of censusRecs) {
+      if (c.id) await db.census.update(c.id, { animalName: newName });
+    }
+
+    // 4. Actualizar en db.shiftTasks
+    const shiftTasks = await db.shiftTasks.where("microchip").equals(cleanChip).toArray();
+    for (const t of shiftTasks) {
+      if (t.id) await db.shiftTasks.update(t.id, { animalName: newName });
+    }
+
+    // 5. Actualizar estado local en componente
+    const updatedAnimal: Animal = {
+      ...currentAnimal,
+      color: selectedColor,
+      name: newName,
+    };
+    setCurrentAnimal(updatedAnimal);
+    setEditColor(selectedColor);
+    setIsEditingColor(false);
+
+    // 6. Sincronizar en segundo plano a Supabase
+    if (typeof window !== "undefined" && navigator.onLine) {
+      try {
+        const { syncAnimalToSupabase } = await import("@/lib/supabase");
+        syncAnimalToSupabase(updatedAnimal).catch(console.warn);
+      } catch {}
+    }
+
+    setFeedbackMessage(`🎨 Color oficial actualizado a "${selectedColor}" con éxito.`);
+    setTimeout(() => setFeedbackMessage(null), 4000);
+  };
+
   const handleSaveQuickEdit = async () => {
     if (!currentAnimal) return;
 
@@ -349,8 +424,9 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
     const isFallecido = editLocation.toUpperCase().trim() === "FALLECIDO";
     const nowIso = new Date().toISOString();
     const previousLoc = currentAnimal.location || "GATERA";
+    const selectedColor = editColor.trim().toUpperCase();
 
-    // Actualizar ubicación y estado en db.animals
+    // Actualizar ubicación, color y estado en db.animals
     const animalUpdatePayload: Partial<Animal> = {
       location: editLocation,
       status: isFallecido ? "fallecido" : (currentAnimal.status === "fallecido" ? "activo" : currentAnimal.status || "activo"),
@@ -358,6 +434,11 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
       causaFallecimiento: isFallecido ? (editPendientes || "Baja registrada en campo") : undefined,
       ubicacionPrevia: isFallecido ? previousLoc : undefined,
     };
+
+    if (selectedColor && currentAnimal.species === "gato") {
+      animalUpdatePayload.color = selectedColor;
+      animalUpdatePayload.name = `FELINO ${selectedColor}`;
+    }
 
     if (currentAnimal.id) {
       await db.animals.update(currentAnimal.id, animalUpdatePayload);
@@ -371,6 +452,8 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
       ...currentAnimal,
       location: editLocation,
       status: isFallecido ? "fallecido" : "activo",
+      color: selectedColor || currentAnimal.color,
+      name: (selectedColor && currentAnimal.species === "gato") ? `FELINO ${selectedColor}` : currentAnimal.name,
     });
 
     if (isFallecido) {
@@ -382,14 +465,22 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
       const tasks = await db.shiftTasks.where("microchip").equals(cleanChip).toArray();
       for (const t of tasks) if (t.id) await db.shiftTasks.delete(t.id);
     } else {
-      // Traslado / Reubicación: actualizar ubicación en censo y tareas de turno activas
+      // Traslado / Reubicación: actualizar ubicación y nombre en censo y tareas de turno activas
       const cRec = await db.census.where("microchip").equals(cleanChip).first();
       if (cRec && cRec.id) {
-        await db.census.update(cRec.id, { location: editLocation });
+        await db.census.update(cRec.id, {
+          location: editLocation,
+          animalName: selectedColor ? `FELINO ${selectedColor}` : undefined,
+        });
       }
       const tasks = await db.shiftTasks.where("microchip").equals(cleanChip).toArray();
       for (const t of tasks) {
-        if (t.id) await db.shiftTasks.update(t.id, { location: editLocation });
+        if (t.id) {
+          await db.shiftTasks.update(t.id, {
+            location: editLocation,
+            animalName: selectedColor ? `FELINO ${selectedColor}` : undefined,
+          });
+        }
       }
     }
 
@@ -405,6 +496,9 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
           ubicacionPrevia: isFallecido ? previousLoc : undefined,
           medicacion: editMedication,
           pendientes: editPendientes,
+          color: selectedColor || catRecord.color,
+          nombre: selectedColor ? `FELINO ${selectedColor}` : catRecord.nombre,
+          descripcion: selectedColor ? `FELINO ${selectedColor} (${catRecord.raza || "DPC"} - ${selectedColor})` : catRecord.descripcion,
         });
       }
       setShelterEntries([
@@ -412,7 +506,7 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
           ubicacion: editLocation,
           microchip: currentAnimal.microchip,
           shortChip: currentAnimal.shortChip || currentAnimal.microchip.slice(-7),
-          descripcion: currentAnimal.name,
+          descripcion: selectedColor ? `FELINO ${selectedColor}` : currentAnimal.name,
           medicacion: editMedication,
           section: "GATERA" as any,
           pendientes: editPendientes,
@@ -451,6 +545,8 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
           ...currentAnimal,
           location: editLocation,
           status: isFallecido ? "fallecido" : "activo",
+          color: selectedColor || currentAnimal.color,
+          name: (selectedColor && currentAnimal.species === "gato") ? `FELINO ${selectedColor}` : currentAnimal.name,
         }).catch(console.warn);
       } catch {}
     }
@@ -894,12 +990,105 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
                 {(currentAnimal.color || currentAnimal.species === "gato") && (
                   <>
                     <span className="text-slate-300">•</span>
-                    <span className="text-xs font-black text-purple-900 bg-purple-100 border border-purple-200 px-2 py-0.5 rounded-lg inline-flex items-center gap-1 shadow-xs">
-                      🎨 Color Oficial (Col. H): {currentAnimal.color || "DPC"}
-                    </span>
+                    <div className="inline-flex items-center gap-1.5 flex-wrap">
+                      <span className="text-xs font-black text-purple-900 bg-purple-100 border border-purple-200 px-2 py-0.5 rounded-lg inline-flex items-center gap-1 shadow-xs">
+                        🎨 Color Oficial (Col. H): {currentAnimal.color || "DPC"}
+                      </span>
+                      {(currentUser?.role === "veterinario" || currentUser?.role === "admin") && !isEditingColor && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditColor(currentAnimal.color || "");
+                            setIsEditingColor(true);
+                          }}
+                          className="text-[10px] font-black text-purple-700 hover:text-purple-900 bg-white hover:bg-purple-50 border border-purple-300 px-2 py-0.5 rounded-md flex items-center gap-1 transition-all shadow-xs active:scale-95"
+                          title="Modificar color oficial del felino"
+                        >
+                          <Edit3 className="w-2.5 h-2.5" /> Editar Color
+                        </button>
+                      )}
+                    </div>
                   </>
                 )}
               </div>
+
+              {/* Selector interactivo directo para modificar el color del felino */}
+              {isEditingColor && currentAnimal.species === "gato" && (
+                <div className="mt-2.5 p-3 bg-purple-50 border border-purple-300/80 rounded-2xl space-y-2.5 shadow-sm animate-in fade-in">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-purple-900 flex items-center gap-1.5 uppercase tracking-wide">
+                      <Palette className="w-4 h-4 text-purple-700" /> Modificar Color Oficial (Columna H)
+                    </span>
+                    <span className="text-[10px] font-bold text-purple-700 bg-purple-200/60 px-2 py-0.5 rounded-full">
+                      {OFFICIAL_GATERA_COLORS.length} Colores Oficiales
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      list="scanner-colors-list"
+                      value={editColor}
+                      onChange={(e) => setEditColor(e.target.value.toUpperCase())}
+                      className="flex-1 p-2 text-xs font-black text-purple-950 bg-white border border-purple-300 rounded-xl uppercase tracking-wide focus:ring-2 focus:ring-purple-500 focus:outline-hidden"
+                      placeholder="Selecciona o escribe el color exacto..."
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleSaveColor()}
+                      className="px-3 py-2 bg-purple-700 hover:bg-purple-800 active:scale-95 text-white text-xs font-black rounded-xl transition-all shadow-xs shrink-0 flex items-center gap-1"
+                    >
+                      <Check className="w-3.5 h-3.5" /> Guardar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingColor(false)}
+                      className="px-2.5 py-2 bg-slate-200 hover:bg-slate-300 active:scale-95 text-slate-700 text-xs font-bold rounded-xl transition-all shrink-0"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+
+                  {/* Datalist con todos los colores oficiales del Excel */}
+                  <datalist id="scanner-colors-list">
+                    {OFFICIAL_GATERA_COLORS.map((col) => (
+                      <option key={col} value={col} />
+                    ))}
+                  </datalist>
+
+                  {/* Chips de Selección Rápida con los Colores Más Comunes */}
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-purple-200/60">
+                    <span className="text-[10px] font-bold text-purple-800 mr-1">Rápidos:</span>
+                    {[
+                      "TABBY PARDO",
+                      "TABBY AMARILLO",
+                      "NEGRO",
+                      "BLANCO",
+                      "BLANCO X NEGRO",
+                      "TRICOLOR",
+                      "CAREY",
+                      "GRIS",
+                      "TABBY PARDO X BLANCO",
+                      "BLANCO X TABBY AMARILLO",
+                      "TABBY AMARILLO X BLANCO",
+                    ].map((quickCol) => (
+                      <button
+                        key={quickCol}
+                        type="button"
+                        onClick={() => handleSaveColor(quickCol)}
+                        className={`px-2 py-0.5 rounded-lg text-[10px] font-black transition-all active:scale-95 border ${
+                          editColor === quickCol
+                            ? "bg-purple-700 text-white border-purple-700 shadow-xs"
+                            : "bg-white text-purple-900 border-purple-200 hover:bg-purple-100"
+                        }`}
+                      >
+                        {quickCol}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {currentAnimal.species === "gato" && currentAnimal.retroviralStatus && currentAnimal.retroviralStatus !== "PENDIENTE" && (
                 <div className="mt-1.5 flex items-center gap-1.5">
                   <span
@@ -1251,6 +1440,24 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
                     ))}
                   </datalist>
                 </div>
+                {currentAnimal.species === "gato" && (
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="font-bold text-slate-700">Modificar Color Oficial (Columna H):</label>
+                      <span className="text-[10px] text-purple-800 font-bold bg-purple-100 px-2 py-0.5 rounded-full">
+                        {OFFICIAL_GATERA_COLORS.length} Colores Oficiales
+                      </span>
+                    </div>
+                    <input
+                      type="text"
+                      list="scanner-colors-list"
+                      value={editColor}
+                      onChange={(e) => setEditColor(e.target.value.toUpperCase())}
+                      className="w-full p-2.5 bg-white border border-purple-300 rounded-xl font-bold uppercase text-purple-950"
+                      placeholder="Ej. TABBY PARDO X BLANCO, CAREY, NEGRO..."
+                    />
+                  </div>
+                )}
                 <div>
                   <label className="font-bold text-slate-700 block mb-1">Modificar Medicación:</label>
                   <textarea

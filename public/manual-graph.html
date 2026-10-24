@@ -1,0 +1,1603 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Obsidian Graph - Manual de Operación Gatera CBA La Perla</title>
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <!-- D3.js CDN -->
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    :root {
+      --bg-main: #141417;
+      --bg-surface: #1e1e24;
+      --bg-surface-elevated: #282830;
+      --border-subtle: #2f2f3d;
+      --border-focus: #7c3aed;
+      --text-normal: #dcddde;
+      --text-muted: #8b8d98;
+      --text-bright: #ffffff;
+      --accent-purple: #a855f7;
+      --accent-purple-glow: rgba(168, 85, 247, 0.35);
+      --accent-cyan: #06b6d4;
+      --accent-amber: #f59e0b;
+      --accent-blue: #3b82f6;
+      --accent-rose: #f43f5e;
+      --accent-emerald: #10b981;
+      --accent-violet: #8b5cf6;
+      --accent-green: #22c55e;
+      --sidebar-width: 440px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg-main);
+      color: var(--text-normal);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+    }
+
+    /* Top Obsidian App Bar */
+    header.obsidian-bar {
+      height: 48px;
+      background-color: #111114;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      z-index: 20;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 600;
+      font-size: 14px;
+      color: var(--text-bright);
+    }
+
+    .brand-icon {
+      color: var(--accent-purple);
+      display: flex;
+      align-items: center;
+    }
+
+    .vault-tag {
+      font-size: 11px;
+      background: rgba(168, 85, 247, 0.15);
+      color: var(--accent-purple);
+      border: 1px solid rgba(168, 85, 247, 0.3);
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .search-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .search-wrapper input {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-bright);
+      padding: 6px 10px 6px 30px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-family: 'Inter', sans-serif;
+      outline: none;
+      width: 220px;
+      transition: all 0.2s;
+    }
+
+    .search-wrapper input:focus {
+      border-color: var(--accent-purple);
+      width: 270px;
+      box-shadow: 0 0 10px var(--accent-purple-glow);
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 9px;
+      color: var(--text-muted);
+      pointer-events: none;
+      width: 14px;
+      height: 14px;
+    }
+
+    .view-btn {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-normal);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s;
+    }
+
+    .view-btn:hover {
+      background: var(--bg-surface-elevated);
+      color: var(--text-bright);
+      border-color: var(--border-focus);
+    }
+
+    .view-btn.active {
+      background: rgba(168, 85, 247, 0.2);
+      border-color: var(--accent-purple);
+      color: var(--accent-purple);
+    }
+
+    /* Main Container */
+    .app-body {
+      flex: 1;
+      display: flex;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Graph Canvas Area */
+    .graph-container {
+      flex: 1;
+      position: relative;
+      background: radial-gradient(circle at center, #1b1b22 0%, #121215 100%);
+      cursor: grab;
+      overflow: hidden;
+    }
+
+    .graph-container:active {
+      cursor: grabbing;
+    }
+
+    canvas#graph-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* Floating Graph Controls */
+    .graph-controls {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(30, 30, 36, 0.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      z-index: 10;
+    }
+
+    .ctrl-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-normal);
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .ctrl-btn:hover {
+      background: var(--bg-surface-elevated);
+      color: var(--text-bright);
+      border-color: var(--border-subtle);
+    }
+
+    /* Category Legend Pill */
+    .legend-panel {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      background: rgba(22, 22, 27, 0.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 10px 14px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      max-width: 580px;
+      z-index: 10;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 4px;
+      transition: all 0.15s;
+    }
+
+    .legend-item:hover, .legend-item.active {
+      color: var(--text-bright);
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .legend-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    /* Side Obsidian Note Pane */
+    .note-panel {
+      width: var(--sidebar-width);
+      background: var(--bg-surface);
+      border-left: 1px solid var(--border-subtle);
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      position: relative;
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), width 0.25s ease;
+      z-index: 15;
+    }
+
+    .note-panel.collapsed {
+      transform: translateX(100%);
+      width: 0;
+      border-left: none;
+    }
+
+    .note-header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #17171c;
+    }
+
+    .note-breadcrumb {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-muted);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .note-actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    .icon-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .icon-btn:hover {
+      color: var(--text-bright);
+      background: var(--bg-surface-elevated);
+    }
+
+    .note-scroll-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      user-select: text;
+    }
+
+    .note-scroll-content::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .note-scroll-content::-webkit-scrollbar-thumb {
+      background: var(--border-subtle);
+      border-radius: 4px;
+    }
+
+    /* Obsidian Markdown Styling */
+    .frontmatter {
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px dashed var(--border-subtle);
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-bottom: 20px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .frontmatter-row {
+      display: flex;
+      margin-bottom: 4px;
+    }
+
+    .fm-key {
+      width: 90px;
+      color: var(--accent-purple);
+    }
+
+    .fm-val {
+      color: var(--text-normal);
+    }
+
+    .note-title {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--text-bright);
+      margin-bottom: 16px;
+      line-height: 1.25;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .note-body p {
+      font-size: 14px;
+      line-height: 1.65;
+      color: var(--text-normal);
+      margin-bottom: 14px;
+    }
+
+    .note-body ul, .note-body ol {
+      margin-left: 20px;
+      margin-bottom: 16px;
+      font-size: 13.5px;
+      line-height: 1.6;
+    }
+
+    .note-body li {
+      margin-bottom: 6px;
+    }
+
+    /* Obsidian Callouts */
+    .callout {
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin: 16px 0;
+      border-left: 4px solid var(--accent-purple);
+      background: rgba(168, 85, 247, 0.08);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .callout.callout-info {
+      border-color: var(--accent-blue);
+      background: rgba(59, 130, 246, 0.08);
+    }
+
+    .callout.callout-success {
+      border-color: var(--accent-emerald);
+      background: rgba(16, 185, 129, 0.08);
+    }
+
+    .callout.callout-warning {
+      border-color: var(--accent-amber);
+      background: rgba(245, 158, 11, 0.08);
+    }
+
+    .callout-title {
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 6px;
+      color: var(--text-bright);
+      text-transform: uppercase;
+      font-size: 11px;
+      letter-spacing: 0.5px;
+    }
+
+    /* Obsidian Wikilink Pill */
+    .wikilink {
+      background: rgba(168, 85, 247, 0.16);
+      color: #c084fc;
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      border: 1px solid rgba(168, 85, 247, 0.25);
+      transition: all 0.15s;
+    }
+
+    .wikilink:hover {
+      background: rgba(168, 85, 247, 0.3);
+      color: #f3e8ff;
+      border-color: var(--accent-purple);
+    }
+
+    /* Backlinks & Connected Nodes Section */
+    .connections-section {
+      margin-top: 30px;
+      padding-top: 18px;
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    .connections-title {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .links-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    /* Drawer Toggle Button when collapsed */
+    .drawer-toggle-btn {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-normal);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      z-index: 10;
+      transition: all 0.15s;
+    }
+
+    .drawer-toggle-btn:hover {
+      background: var(--bg-surface-elevated);
+      color: var(--text-bright);
+      border-color: var(--accent-purple);
+    }
+
+    /* Modal / Tooltip */
+    #tooltip {
+      position: absolute;
+      pointer-events: none;
+      background: rgba(22, 22, 28, 0.95);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--accent-purple);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 12px;
+      color: var(--text-bright);
+      z-index: 100;
+      display: none;
+      max-width: 260px;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Obsidian Top Application Bar -->
+  <header class="obsidian-bar">
+    <div class="brand">
+      <div class="brand-icon"><i data-lucide="network"></i></div>
+      <span>Gatera CBA La Perla</span>
+      <span class="vault-tag">Obsidian Graph v2.4</span>
+    </div>
+
+    <div class="header-actions">
+      <div class="search-wrapper">
+        <i data-lucide="search" class="search-icon"></i>
+        <input type="text" id="node-search" placeholder="Filtrar notas o conceptos... (Cmd+F)">
+      </div>
+      <button class="view-btn active" id="btn-toggle-forces">
+        <i data-lucide="sliders"></i> Física Dinámica
+      </button>
+      <button class="view-btn" id="btn-reset-zoom">
+        <i data-lucide="maximize-2"></i> Centrar Grafo
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Body -->
+  <div class="app-body">
+
+    <!-- Graph Canvas Area -->
+    <div class="graph-container" id="graph-wrapper">
+      <!-- Category Legend -->
+      <div class="legend-panel">
+        <div class="legend-item" data-group="hub"><span class="legend-dot" style="background: var(--accent-purple); box-shadow: 0 0 6px var(--accent-purple);"></span> Hub Central</div>
+        <div class="legend-item" data-group="acceso"><span class="legend-dot" style="background: var(--accent-cyan)"></span> 1. Acceso & PWA</div>
+        <div class="legend-item" data-group="offline"><span class="legend-dot" style="background: var(--accent-amber)"></span> 2. Modo Offline</div>
+        <div class="legend-item" data-group="sync"><span class="legend-dot" style="background: var(--accent-blue)"></span> 3. Sincronización</div>
+        <div class="legend-item" data-group="clinica"><span class="legend-dot" style="background: var(--accent-rose)"></span> 4. Gestión Clínica</div>
+        <div class="legend-item" data-group="censo"><span class="legend-dot" style="background: var(--accent-emerald)"></span> 5. Censo & Rescates</div>
+        <div class="legend-item" data-group="fallecidos"><span class="legend-dot" style="background: var(--accent-violet)"></span> 6. Bajas & Auditoría</div>
+        <div class="legend-item" data-group="excel"><span class="legend-dot" style="background: var(--accent-green)"></span> 7. Excel Maestro</div>
+      </div>
+
+      <!-- Controls Bottom Left -->
+      <div class="graph-controls">
+        <button class="ctrl-btn" id="zoom-in" title="Acercar"><i data-lucide="zoom-in"></i></button>
+        <button class="ctrl-btn" id="zoom-out" title="Alejar"><i data-lucide="zoom-out"></i></button>
+        <button class="ctrl-btn" id="toggle-particles" title="Activar/Desactivar Pulsos"><i data-lucide="activity"></i></button>
+      </div>
+
+      <canvas id="graph-canvas"></canvas>
+
+      <button class="drawer-toggle-btn" id="open-pane-btn" style="display: none;">
+        <i data-lucide="panel-right-open"></i> Ver Nota
+      </button>
+    </div>
+
+    <!-- Side Obsidian Markdown Preview Drawer -->
+    <aside class="note-panel" id="note-pane">
+      <div class="note-header">
+        <div class="note-breadcrumb">
+          <i data-lucide="file-text" style="width: 14px; height: 14px;"></i>
+          <span id="note-category-label">Manual / Módulos</span>
+        </div>
+        <div class="note-actions">
+          <button class="icon-btn" id="close-pane-btn" title="Ocultar Panel"><i data-lucide="panel-right-close"></i></button>
+        </div>
+      </div>
+
+      <div class="note-scroll-content" id="note-view">
+        <!-- Dynamic Markdown Render will be inserted here -->
+      </div>
+    </aside>
+
+  </div>
+
+  <!-- Tooltip Element -->
+  <div id="tooltip"></div>
+
+  <script>
+    // Initialize Lucide Icons
+    lucide.createIcons();
+
+    // -------------------------------------------------------------------------
+    // GRAPH DATA: Nodes & Links derived from the User's Manual
+    // -------------------------------------------------------------------------
+    const graphData = {
+      nodes: [
+        // HUB CENTRAL
+        {
+          id: "hub",
+          title: "Manual Gatera CBA La Perla",
+          group: "hub",
+          color: "#a855f7",
+          val: 26,
+          category: "Manual Principal",
+          tags: ["#gatera", "#cba-la-perla", "#pwa", "#manual-operacion"],
+          summary: "Ecosistema integral de operación, trazabilidad de felinos, gestión de tratamientos y sincronización offline-first.",
+          content: `
+            <div class="frontmatter">
+              <div class="frontmatter-row"><span class="fm-key">vault:</span><span class="fm-val">CBA La Perla</span></div>
+              <div class="frontmatter-row"><span class="fm-key">sistema:</span><span class="fm-val">Lector De Chip (PWA)</span></div>
+              <div class="frontmatter-row"><span class="fm-key">estado:</span><span class="fm-val">Producción / Campo</span></div>
+              <div class="frontmatter-row"><span class="fm-key">arquitectura:</span><span class="fm-val">Offline-First + Supabase Sync</span></div>
+            </div>
+            <h1 class="note-title">🐾 Gatera CBA La Perla - Manual Maestro</h1>
+            <p>Bienvenido al mapa de conocimiento interactivo del <strong>Manual de Operación y Sincronización</strong> de la Gatera del Centro de Bienestar Animal La Perla.</p>
+            <div class="callout callout-info">
+              <div class="callout-title"><i data-lucide="info"></i> Arquitectura Offline-First</div>
+              Diseñado para operar en zonas de caniles y patios sin cobertura de datos móviles o WiFi, garantizando 0% de pérdida de registros clínicos.
+            </div>
+            <p>Navega a través de los 7 módulos estratégicos haciendo clic en cada nodo del grafo:</p>
+            <ul>
+              <li><span class="wikilink" onclick="selectNodeById('n1')">[[1. Acceso y Primer Ingreso]]</span></li>
+              <li><span class="wikilink" onclick="selectNodeById('n2')">[[2. Trabajo en Campo y Modo Offline]]</span></li>
+              <li><span class="wikilink" onclick="selectNodeById('n3')">[[3. Sincronización entre Dispositivos]]</span></li>
+              <li><span class="wikilink" onclick="selectNodeById('n4')">[[4. Escaneo y Gestión Clínica]]</span></li>
+              <li><span class="wikilink" onclick="selectNodeById('n5')">[[5. Nuevos Ingresos y Rescates]]</span></li>
+              <li><span class="wikilink" onclick="selectNodeById('n6')">[[6. Control de Felinos Fallecidos]]</span></li>
+              <li><span class="wikilink" onclick="selectNodeById('n7')">[[7. Exportación de Reportes Excel]]</span></li>
+            </ul>
+          `
+        },
+
+        // 1. ACCESO Y PRIMER INGRESO
+        {
+          id: "n1",
+          title: "1. Acceso y Primer Ingreso",
+          group: "acceso",
+          color: "#06b6d4",
+          val: 18,
+          category: "Autenticación",
+          tags: ["#acceso", "#pwa", "#roles", "#sesion"],
+          summary: "PWA multiplataforma accesible desde computadores, tablets y móviles con persistencia de credenciales.",
+          content: `
+            <div class="frontmatter">
+              <div class="frontmatter-row"><span class="fm-key">sección:</span><span class="fm-val">01 - Inicio de Sesión</span></div>
+              <div class="frontmatter-row"><span class="fm-key">dispositivos:</span><span class="fm-val">Android, iPhone, PC, Tablet</span></div>
+            </div>
+            <h1 class="note-title">📱 Acceso y Primer Ingreso</h1>
+            <p>La aplicación está concebida como una <strong>PWA (Web App Progresiva)</strong> optimizada para operar fluidamente en cualquier navegador contemporáneo sin descargas engorrosas desde tiendas de apps.</p>
+            <ul>
+              <li><strong>Compatibilidad Total:</strong> Funciona en cualquier computador, tablet o teléfono móvil (Android o iPhone).</li>
+              <li><strong>Selección de Personal y Rol:</strong> Al abrir el enlace por primera vez, selecciona tu nombre del listado oficial o regístrate con tu Rol:
+                <ul>
+                  <li><span class="wikilink" onclick="selectNodeById('n1_roles')">[[Médico Veterinario]]</span></li>
+                  <li><span class="wikilink" onclick="selectNodeById('n1_roles')">[[Cuidador / Operario]]</span></li>
+                </ul>
+              </li>
+              <li><strong>Persistencia de Sesión:</strong> La app preserva tu perfil activo automáticamente en el almacenamiento local del dispositivo.</li>
+            </ul>
+            <div class="callout callout-success">
+              <div class="callout-title"><i data-lucide="check-circle-2"></i> Tip de Inicio</div>
+              Puedes agregar la aplicación a la pantalla de inicio de tu smartphone tocando "Instalar App" o "Agregar a Pantalla de Inicio" para acceso con un solo toque.
+            </div>
+          `
+        },
+        {
+          id: "n1_pwa",
+          title: "PWA Multiplataforma",
+          group: "acceso",
+          color: "#06b6d4",
+          val: 10,
+          category: "Tecnología",
+          tags: ["#pwa", "#cross-platform"],
+          summary: "Funciona en iOS, Android y Navegadores de escritorio sin necesidad de instalación tradicional.",
+          content: `
+            <h1 class="note-title">🌐 PWA Multiplataforma</h1>
+            <p>La arquitectura PWA permite utilizar Service Workers y almacenamiento interno para emular una aplicación nativa en Android e iOS.</p>
+          `
+        },
+        {
+          id: "n1_roles",
+          title: "Roles: Veterinario / Cuidador",
+          group: "acceso",
+          color: "#06b6d4",
+          val: 10,
+          category: "Seguridad",
+          tags: ["#roles", "#veterinarios", "#cuidadores"],
+          summary: "Diferenciación de facultades: prescripción clínica vs ejecución de dosis y tareas.",
+          content: `
+            <h1 class="note-title">👥 Perfiles y Roles</h1>
+            <p>El sistema asigna permisos según el rol seleccionado al iniciar sesión:</p>
+            <ul>
+              <li><strong>Médico Veterinario:</strong> Prescripción de dosis, instauración de tratamientos, diagnósticos y altas médicas.</li>
+              <li><strong>Cuidador / Operario:</strong> Aplicación de dosis diarias, confirmación de traslados y reporte de observaciones.</li>
+            </ul>
+          `
+        },
+
+        // 2. MODO OFFLINE / CAMPO
+        {
+          id: "n2",
+          title: "2. Trabajo en Campo y Modo Offline",
+          group: "offline",
+          color: "#f59e0b",
+          val: 18,
+          category: "Almacenamiento Local",
+          tags: ["#offline-first", "#indexeddb", "#sin-wifi"],
+          summary: "100% operativo sin cobertura. Los datos se almacenan en la memoria interna (IndexedDB).",
+          content: `
+            <div class="frontmatter">
+              <div class="frontmatter-row"><span class="fm-key">estado_red:</span><span class="fm-val">Zero-Connectivity Ready</span></div>
+              <div class="frontmatter-row"><span class="fm-key">motor_local:</span><span class="fm-val">IndexedDB Database</span></div>
+            </div>
+            <h1 class="note-title">📶 Modo Offline (Sin Señal / Sin WiFi)</h1>
+            <p>La aplicación es <strong>100% OFFLINE-FIRST</strong>: puedes escanear microchips, registrar felinos nuevos, trasladar de canil y aplicar dosis en zonas profundas de Gatera donde no penetra la señal celular ni el WiFi.</p>
+            <div class="callout callout-warning">
+              <div class="callout-title"><i data-lucide="wifi-off"></i> Notificación Visual de Modo Campo</div>
+              Si se interrumpe la conexión, verás un cintillo superior en color ámbar:
+              <br><em>"Modo Campo (Sin WiFi): Todos los escaneos y registros se guardan localmente"</em>.
+            </div>
+            <ul>
+              <li><strong>Persistencia Local Inmediata:</strong> Los cambios se serializan al instante en la memoria física del navegador (<span class="wikilink" onclick="selectNodeById('n2_indexeddb')">[[IndexedDB]]</span>).</li>
+              <li><strong>Cero Pérdidas:</strong> Nunca se bloquea un formulario por falta de internet; todo queda encolado para su posterior subida.</li>
+            </ul>
+          `
+        },
+        {
+          id: "n2_indexeddb",
+          title: "IndexedDB Local",
+          group: "offline",
+          color: "#f59e0b",
+          val: 11,
+          category: "Base de Datos",
+          tags: ["#indexeddb", "#local-storage"],
+          summary: "Base de datos transaccional no relacional en el navegador del operador.",
+          content: `
+            <h1 class="note-title">💾 IndexedDB Local</h1>
+            <p>Almacén cliente de alta capacidad en el navegador donde residen las tablas de censo, historiales, tratamientos pendientes y cola de sincronización pendiente.</p>
+          `
+        },
+        {
+          id: "n2_aviso",
+          title: "Alerta de Modo Campo",
+          group: "offline",
+          color: "#f59e0b",
+          val: 9,
+          category: "Interfaz UI",
+          tags: ["#ui-status", "#offline-banner"],
+          summary: "Banner informativo que garantiza confianza al operario durante rondas sin conectividad.",
+          content: `
+            <h1 class="note-title">⚠️ Alerta de Modo Campo</h1>
+            <p>Indica claramente el estado offline para dar total tranquilidad al operario de que sus registros no se perderán.</p>
+          `
+        },
+
+        // 3. SINCRONIZACIÓN
+        {
+          id: "n3",
+          title: "3. Sincronización entre Dispositivos",
+          group: "sync",
+          color: "#3b82f6",
+          val: 18,
+          category: "Sincronización Cloud",
+          tags: ["#sync", "#supabase", "#automatica", "#censo"],
+          summary: "Replicación bidireccional automática al detectar conexión + forzado manual desde CENSO.",
+          content: `
+            <div class="frontmatter">
+              <div class="frontmatter-row"><span class="fm-key">nube:</span><span class="fm-val">Supabase Cloud</span></div>
+              <div class="frontmatter-row"><span class="fm-key">mecanismo:</span><span class="fm-val">Bidireccional Automático</span></div>
+            </div>
+            <h1 class="note-title">🔄 Sincronización de Datos</h1>
+            <p>La sincronización entre terminales es <strong>automática e inteligente</strong>. En el instante exacto en que el dispositivo detecta conexión a WiFi o datos celulares:</p>
+            <ol>
+              <li><strong>Subida (Upload):</strong> Envía a <span class="wikilink" onclick="selectNodeById('n3_supabase')">[[Supabase Cloud]]</span> todos los chips nuevos registrados, tratamientos instaurados, cambios de canil y tareas completadas.</li>
+              <li><strong>Descarga (Download):</strong> Incorpora los felinos, dosis y novedades agregadas por compañeros de turno desde otros celulares o la central.</li>
+            </ol>
+            <div class="callout callout-info">
+              <div class="callout-title"><i data-lucide="refresh-cw"></i> Sincronización Manual Forzada</div>
+              Si necesitas asegurar que tu dispositivo tiene el último censo antes de salir a campo, ve a la pestaña <strong>"CENSO"</strong> y presiona el botón <span class="wikilink" onclick="selectNodeById('n3_manual')">[[Sincronizar Archivos]]</span>.
+            </div>
+          `
+        },
+        {
+          id: "n3_supabase",
+          title: "Supabase Cloud",
+          group: "sync",
+          color: "#3b82f6",
+          val: 12,
+          category: "Infraestructura Cloud",
+          tags: ["#supabase", "#postgres", "#realtime"],
+          summary: "Servidor central en la nube que actúa como fuente única de verdad consolidada.",
+          content: `
+            <h1 class="note-title">☁️ Supabase Cloud</h1>
+            <p>Almacén centralizado PostgreSQL en la nube con API REST y WebSockets para consolidar el censo institucional.</p>
+          `
+        },
+        {
+          id: "n3_manual",
+          title: "Botón Sincronizar Archivos",
+          group: "sync",
+          color: "#3b82f6",
+          val: 10,
+          category: "Acción de Usuario",
+          tags: ["#sync-manual", "#censo-tab"],
+          summary: "Disparador manual localizado en la pestaña CENSO para conciliar datos al instante.",
+          content: `
+            <h1 class="note-title">🔘 Botón 'Sincronizar Archivos'</h1>
+            <p>Permite a los operarios forzar la sincronización de manera determinística cuando recuperan cobertura al retornar a la oficina médica.</p>
+          `
+        },
+
+        // 4. ESCANEO Y GESTIÓN CLÍNICA
+        {
+          id: "n4",
+          title: "4. Escaneo y Gestión Clínica",
+          group: "clinica",
+          color: "#f43f5e",
+          val: 20,
+          category: "Ficha Médica",
+          tags: ["#escaner", "#microchip", "#tratamientos", "#vif-felv"],
+          summary: "Ficha clínica completa al escanear: microchip, color oficial Col H, ubicación, serología y acciones rápidas.",
+          content: `
+            <div class="frontmatter">
+              <div class="frontmatter-row"><span class="fm-key">modulo:</span><span class="fm-val">Ficha Clínica Digital</span></div>
+              <div class="frontmatter-row"><span class="fm-key">lectura:</span><span class="fm-val">Escaneo RFID / Búsqueda Manual</span></div>
+            </div>
+            <h1 class="note-title">🩺 Escaneo y Gestión Clínica del Felino</h1>
+            <p>Al leer o digitar el microchip de un animal se despliega de inmediato su tarjeta integral:</p>
+            <ul>
+              <li><strong>Microchip:</strong> Código completo de 15 dígitos y formato abreviado de fácil lectura.</li>
+              <li><strong>Color Oficial:</strong> Correspondencia exacta con la Columna H de la planilla oficial y badge cromático identificador.</li>
+              <li><strong>Ubicación Actual:</strong> Patio, Canil o Jaula asignada.</li>
+              <li><strong>Estado Serológico:</strong> Indicador de <span class="wikilink" onclick="selectNodeById('n4_serologia')">[[VIF / FeLV]]</span> y advertencia de <em>Condición Feral</em>.</li>
+              <li><strong>Tratamiento Médico Activo:</strong> Fármaco, posología y contador dinámico de <em>dosis aplicadas / faltantes</em>.</li>
+            </ul>
+            <div class="callout callout-info">
+              <div class="callout-title"><i data-lucide="zap"></i> Acciones Rápidas Disponibles</div>
+              <ul>
+                <li><span class="wikilink" onclick="selectNodeById('n4_trasladar')">[[✏️ Trasladar]]</span>: Reubicación en tiempo real.</li>
+                <li><span class="wikilink" onclick="selectNodeById('n4_instaurar')">[[➕ Instaurar Tratamiento]]</span>: Nueva prescripción médica.</li>
+                <li><span class="wikilink" onclick="selectNodeById('n4_editar_dosis')">[[✏️ Editar / + Dosis]]</span>: Ajustar o prolongar ciclo.</li>
+                <li><span class="wikilink" onclick="selectNodeById('n4_alta')">[[🩺 Dar Alta Médica]]</span>: Culminación al 100%.</li>
+              </ul>
+            </div>
+          `
+        },
+        {
+          id: "n4_serologia",
+          title: "Serología (VIF / FeLV) & Feral",
+          group: "clinica",
+          color: "#f43f5e",
+          val: 10,
+          category: "Diagnóstico",
+          tags: ["#vif", "#felv", "#feral", "#bioseguridad"],
+          summary: "Marcadores epidemiológicos clave para bioseguridad y aislamiento en caniles.",
+          content: `
+            <h1 class="note-title">🧪 Estado Serológico y Feral</h1>
+            <p>Alerta sobre felinos seropositivos a Leucemia Felina (FeLV) o Inmunodeficiencia (VIF), previniendo traslados no compatibles con gatos sanos.</p>
+          `
+        },
+        {
+          id: "n4_trasladar",
+          title: "✏️ Trasladar Felino",
+          group: "clinica",
+          color: "#f43f5e",
+          val: 10,
+          category: "Acción Clínica",
+          tags: ["#traslado", "#canil", "#jaula", "#patio"],
+          summary: "Actualización inmediata de canil, jaula o patio del felino.",
+          content: `
+            <h1 class="note-title">📦 Reubicación y Traslados</h1>
+            <p>Registra de manera instantánea el movimiento de un gato entre patios y jaulas individuales, manteniendo el censo físico siempre exacto.</p>
+          `
+        },
+        {
+          id: "n4_instaurar",
+          title: "➕ Instaurar Tratamiento",
+          group: "clinica",
+          color: "#f43f5e",
+          val: 11,
+          category: "Farmacología",
+          tags: ["#prescripcion", "#medicacion", "#dosis"],
+          summary: "Permite a los médicos prescribir medicación con dosis, frecuencia y sistema de administración.",
+          content: `
+            <h1 class="note-title">💊 Instauración de Tratamientos</h1>
+            <p>Módulo exclusivo de prescripción veterinaria que alimenta de inmediato la agenda de tareas de los operarios en campo.</p>
+          `
+        },
+        {
+          id: "n4_editar_dosis",
+          title: "✏️ Editar / + Dosis",
+          group: "clinica",
+          color: "#f43f5e",
+          val: 9,
+          category: "Farmacología",
+          tags: ["#ajuste-dosis", "#prolongacion"],
+          summary: "Ajuste o ampliación de tratamientos en curso según respuesta clínica.",
+          content: `
+            <h1 class="note-title">💉 Ajuste y Adición de Dosis</h1>
+            <p>Flexibilidad médica para prolongar días de antibiótico o ajustar miligramos sin rehacer la historia desde cero.</p>
+          `
+        },
+        {
+          id: "n4_alta",
+          title: "🩺 Dar Alta Médica",
+          group: "clinica",
+          color: "#f43f5e",
+          val: 10,
+          category: "Clínica",
+          tags: ["#alta-medica", "#plan-tto"],
+          summary: "Finaliza el tratamiento al 100% y limpia las tareas del animal.",
+          content: `
+            <h1 class="note-title">🏁 Alta Médica</h1>
+            <p>Certifica la recuperación del felino, archivando el tratamiento activo en el histórico y liberando su agenda de medicación.</p>
+          `
+        },
+
+        // 5. REGISTRO DE NUEVOS INGRESOS (CENSO CRECIENTE)
+        {
+          id: "n5",
+          title: "5. Nuevos Ingresos y Rescates",
+          group: "censo",
+          color: "#10b981",
+          val: 18,
+          category: "Censo Activo",
+          tags: ["#censo", "#ingresos", "#rescates", "#caniles"],
+          summary: "Inclusión dinámica de felinos recién rescatados con asignación de chip, canil y medicación de bienvenida.",
+          content: `
+            <div class="frontmatter">
+              <div class="frontmatter-row"><span class="fm-key">modulo:</span><span class="fm-val">Censo Dinámico Creciente</span></div>
+              <div class="frontmatter-row"><span class="fm-key">ingresos:</span><span class="fm-val">Rescates / Reingresos</span></div>
+            </div>
+            <h1 class="note-title">🐱 Registro de Nuevos Ingresos y Rescates</h1>
+            <p>Flujo estandarizado cuando arriba un nuevo animal a la Gatera:</p>
+            <ol>
+              <li>En la pestaña <strong>"ESCÁNER"</strong> o <strong>"CENSO"</strong>, presiona <span class="wikilink" onclick="selectNodeById('n5_form')">[[➕ Registrar Felino]]</span>.</li>
+              <li>Ingresa los campos esenciales: Microchip, Ubicación (Canil), Sexo, Color y Estado Clínico.</li>
+              <li><strong>Medicación Inmediata:</strong> Si el felino arriba con cuadro respiratorio, ocular o heridas, se puede instaurar tratamiento en el mismo formulario de ingreso.</li>
+              <li>Al pulsar <em>"Guardar Felino"</em>, el animal se incorpora de forma inmediata al <span class="wikilink" onclick="selectNodeById('n5_censo_din')">[[Censo Dinámico]]</span>, se calendariza en las tareas del día y se replica a todos los dispositivos.</li>
+            </ol>
+            <div class="callout callout-success">
+              <div class="callout-title"><i data-lucide="sparkles"></i> Sin Esperas de Oficina</div>
+              Los rescatistas y operarios de campo no tienen que esperar a llegar al escritorio para registrar un gato; todo se crea en el canil.
+            </div>
+          `
+        },
+        {
+          id: "n5_form",
+          title: "➕ Formulario de Registro",
+          group: "censo",
+          color: "#10b981",
+          val: 10,
+          category: "Formularios",
+          tags: ["#formulario", "#captura-datos"],
+          summary: "Captura de microchip, canil inicial, sexo, color oficial y condición de salud.",
+          content: `
+            <h1 class="note-title">📝 Formulario de Registro Rápido</h1>
+            <p>Diseño táctil accesible con una sola mano para acelerar la toma de datos de felinos asustados o recién ingresados.</p>
+          `
+        },
+        {
+          id: "n5_censo_din",
+          title: "Censo Dinámico y Tareas",
+          group: "censo",
+          color: "#10b981",
+          val: 11,
+          category: "Gestión Operativa",
+          tags: ["#censo-dinamico", "#tareas-diarias"],
+          summary: "El animal pasa a formar parte de las rondas de alimentación, aseo y medicación de todo el equipo.",
+          content: `
+            <h1 class="note-title">📋 Censo Dinámico de Población</h1>
+            <p>Actualización en vivo de la población censada en Gatera para cálculo exacto de raciones, insumos y capacidades de canil.</p>
+          `
+        },
+
+        // 6. CONTROL DE FALLECIDOS
+        {
+          id: "n6",
+          title: "6. Control de Felinos Fallecidos",
+          group: "fallecidos",
+          color: "#8b5cf6",
+          val: 18,
+          category: "Bajas y Auditoría",
+          tags: ["#fallecidos", "#bajas", "#auditoria", "#causas"],
+          summary: "Gestión ética y trazable de decesos. Se retira del censo activo y se guarda registro para auditoría.",
+          content: `
+            <div class="frontmatter">
+              <div class="frontmatter-row"><span class="fm-key">estado:</span><span class="fm-val">Baja de Censo Activo</span></div>
+              <div class="frontmatter-row"><span class="fm-key">destino_hoja:</span><span class="fm-val">CONTROL DE FELINOS FALLECIDOS</span></div>
+            </div>
+            <h1 class="note-title">🕊️ Reporte y Control de Felinos Fallecidos</h1>
+            <p>Protocolo administrativo ante el deceso de un animal en el albergue:</p>
+            <ol>
+              <li>Cambia la ubicación a <strong>"FALLECIDO"</strong> desde la ficha clínica o pulsa <span class="wikilink" onclick="selectNodeById('n6_baja')">[[Registrar Fallecido]]</span> en la pestaña "CENSO".</li>
+              <li>El sistema solicita: Microchip, Fecha del suceso y Causa médica de la baja.</li>
+              <li><strong>Descuento Inmediato:</strong> Se resta automáticamente del censo de animales activos y se remueve de las rondas de dosis de los cuidadores.</li>
+              <li><strong>Auditoría Permanente:</strong> Los datos históricos no se borran; quedan protegidos y se exportan en la hoja oficial de Excel.</li>
+            </ol>
+            <div class="callout callout-warning">
+              <div class="callout-title"><i data-lucide="shield-alert"></i> Integridad y Trazabilidad</div>
+              Ningún registro de deceso se pierde o sobrescribe; esto garantiza auditorías transparentes frente a la administración pública.
+            </div>
+          `
+        },
+        {
+          id: "n6_baja",
+          title: "Baja por Fallecimiento",
+          group: "fallecidos",
+          color: "#8b5cf6",
+          val: 10,
+          category: "Protocolo",
+          tags: ["#registro-baja", "#motivo-deceso"],
+          summary: "Captura de causa de muerte y retiro preventivo de alertas de medicación.",
+          content: `
+            <h1 class="note-title">🗂️ Registro de Baja</h1>
+            <p>Procedimiento estricto que requiere dictamen veterinario de defunción o causa presunta para cerrar el expediente.</p>
+          `
+        },
+        {
+          id: "n6_auditoria",
+          title: "Histórico para Auditoría",
+          group: "fallecidos",
+          color: "#8b5cf6",
+          val: 10,
+          category: "Cumplimiento Legal",
+          tags: ["#auditoria", "#hoja-fallecidos"],
+          summary: "Preservación inmutable de datos para reportes y supervisión externa.",
+          content: `
+            <h1 class="note-title">📜 Histórico y Hoja de Auditoría</h1>
+            <p>Los datos se derivan automáticamente a la hoja dedicada del Excel para inspecciones sanitarias y de bienestar animal.</p>
+          `
+        },
+
+        // 7. EXPORTACIÓN EXCEL MAESTRO
+        {
+          id: "n7",
+          title: "7. Exportación Excel Maestro",
+          group: "excel",
+          color: "#22c55e",
+          val: 18,
+          category: "Reportería Oficial",
+          tags: ["#excel", "#24-columnas", "#4-hojas", "#reporte-maestro"],
+          summary: "Generación del archivo oficial de 24 columnas con las 4 hojas reglamentarias.",
+          content: `
+            <div class="frontmatter">
+              <div class="frontmatter-row"><span class="fm-key">formato:</span><span class="fm-val">Microsoft Excel (.xlsx)</span></div>
+              <div class="frontmatter-row"><span class="fm-key">columnas:</span><span class="fm-val">24 Columnas Oficiales</span></div>
+              <div class="frontmatter-row"><span class="fm-key">hojas:</span><span class="fm-val">4 Hojas Reglamentarias</span></div>
+            </div>
+            <h1 class="note-title">📊 Exportación de Reportes Oficiales en Excel</h1>
+            <p>En la pestaña <strong>"CENSO"</strong>, presiona el botón <span class="wikilink" onclick="selectNodeById('n7_24col')">[[Exportar Excel Maestro]]</span>:</p>
+            <ul>
+              <li><strong>Estructura Rigurosa de 24 Columnas:</strong> Descarga el archivo respetando la plantilla oficial institucional, incorporando los felinos base más la totalidad de nuevos registros de campo.</li>
+              <li><strong>4 Hojas Reglamentarias Consolidadas:</strong>
+                <ul>
+                  <li><span class="wikilink" onclick="selectNodeById('n7_hojas')">[[CENSO]]</span>: Listado completo de animales vivos y activos.</li>
+                  <li><span class="wikilink" onclick="selectNodeById('n7_hojas')">[[PLAN TTO]]</span>: Plan de tratamientos médicos vigentes y posología.</li>
+                  <li><span class="wikilink" onclick="selectNodeById('n7_hojas')">[[PLAN SANITARIO]]</span>: Desparasitaciones, vacunas y control preventivo.</li>
+                  <li><span class="wikilink" onclick="selectNodeById('n7_hojas')">[[CONTROL DE FALLECIDOS]]</span>: Histórico de decesos y motivos.</li>
+                </ul>
+              </li>
+            </ul>
+            <div class="callout callout-success">
+              <div class="callout-title"><i data-lucide="file-spreadsheet"></i> 100% Compatible con el Albergue</div>
+              No requiere ajustes manuales; está listo para ser presentado a supervisión y archivo general.
+            </div>
+          `
+        },
+        {
+          id: "n7_24col",
+          title: "Excel Maestro (24 Cols)",
+          group: "excel",
+          color: "#22c55e",
+          val: 11,
+          category: "Estructura de Datos",
+          tags: ["#columnas-oficiales", "#columna-h"],
+          summary: "Cumplimiento estricto de la plantilla oficial de CBA La Perla.",
+          content: `
+            <h1 class="note-title">📑 Estructura de 24 Columnas</h1>
+            <p>Mapea cada campo capturado en la PWA con la casilla exacta de la planilla histórica del Centro de Bienestar Animal.</p>
+          `
+        },
+        {
+          id: "n7_hojas",
+          title: "4 Hojas Oficiales",
+          group: "excel",
+          color: "#22c55e",
+          val: 12,
+          category: "Hojas de Cálculo",
+          tags: ["#censo", "#plan-tto", "#plan-sanitario", "#fallecidos"],
+          summary: "CENSO, PLAN TTO, PLAN SANITARIO y CONTROL DE FALLECIDOS integrados.",
+          content: `
+            <h1 class="note-title">📑 4 Hojas Reglamentarias</h1>
+            <p>Separación analítica de datos clínicos, preventivos y demográficos para cada área de gestión del albergue.</p>
+          `
+        }
+      ],
+
+      links: [
+        // Conexiones del Hub Central a los 7 Módulos
+        { source: "hub", target: "n1", strength: 1 },
+        { source: "hub", target: "n2", strength: 1 },
+        { source: "hub", target: "n3", strength: 1 },
+        { source: "hub", target: "n4", strength: 1 },
+        { source: "hub", target: "n5", strength: 1 },
+        { source: "hub", target: "n6", strength: 1 },
+        { source: "hub", target: "n7", strength: 1 },
+
+        // Módulo 1 (Acceso)
+        { source: "n1", target: "n1_pwa" },
+        { source: "n1", target: "n1_roles" },
+
+        // Módulo 2 (Offline)
+        { source: "n2", target: "n2_indexeddb" },
+        { source: "n2", target: "n2_aviso" },
+        { source: "n1_pwa", target: "n2" }, // PWA habilita offline
+
+        // Módulo 3 (Sync)
+        { source: "n3", target: "n3_supabase" },
+        { source: "n3", target: "n3_manual" },
+        { source: "n2_indexeddb", target: "n3_supabase" }, // Puente clave local-nube
+
+        // Módulo 4 (Clínica)
+        { source: "n4", target: "n4_serologia" },
+        { source: "n4", target: "n4_trasladar" },
+        { source: "n4", target: "n4_instaurar" },
+        { source: "n4", target: "n4_editar_dosis" },
+        { source: "n4", target: "n4_alta" },
+        { source: "n1_roles", target: "n4_instaurar" }, // Solo veterinarios
+
+        // Módulo 5 (Nuevos Ingresos)
+        { source: "n5", target: "n5_form" },
+        { source: "n5", target: "n5_censo_din" },
+        { source: "n5_form", target: "n4_instaurar" }, // Medicar al ingresar
+        { source: "n5_censo_din", target: "n3" }, // Se replica a todos
+
+        // Módulo 6 (Fallecidos)
+        { source: "n6", target: "n6_baja" },
+        { source: "n6", target: "n6_auditoria" },
+        { source: "n4", target: "n6_baja" }, // Se puede marcar desde la ficha
+        { source: "n6_baja", target: "n5_censo_din" }, // Resta del censo activo
+
+        // Módulo 7 (Excel)
+        { source: "n7", target: "n7_24col" },
+        { source: "n7", target: "n7_hojas" },
+        { source: "n5_censo_din", target: "n7_hojas" }, // Alimenta hoja CENSO
+        { source: "n4_instaurar", target: "n7_hojas" }, // Alimenta hoja PLAN TTO
+        { source: "n6_auditoria", target: "n7_hojas" }  // Alimenta hoja CONTROL DE FALLECIDOS
+      ]
+    };
+
+    // -------------------------------------------------------------------------
+    // OBSIDIAN GRAPH RENDERING ENGINE (HTML5 Canvas + D3-Force)
+    // -------------------------------------------------------------------------
+    const canvas = document.getElementById("graph-canvas");
+    const ctx = canvas.getContext("2d");
+    const wrapper = document.getElementById("graph-wrapper");
+    const tooltip = document.getElementById("tooltip");
+
+    let width = wrapper.clientWidth;
+    let height = wrapper.clientHeight;
+    let transform = d3.zoomIdentity;
+    let selectedNode = graphData.nodes[0]; // Start with Hub
+    let hoveredNode = null;
+    let enableParticles = true;
+    let particles = [];
+    let isPhysicsActive = true;
+
+    // Set Canvas DPI
+    function resizeCanvas() {
+      const dpr = window.devicePixelRatio || 1;
+      width = wrapper.clientWidth;
+      height = wrapper.clientHeight;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      canvas.style.width = width + "px";
+      canvas.style.height = height + "px";
+      ctx.scale(dpr, dpr);
+    }
+    resizeCanvas();
+    window.addEventListener("resize", () => {
+      resizeCanvas();
+      simulation.center(width / 2, height / 2);
+    });
+
+    // D3 Force Simulation
+    const simulation = d3.forceSimulation(graphData.nodes)
+      .force("link", d3.forceLink(graphData.links).id(d => d.id).distance(d => {
+        if (d.source.id === "hub" || d.target.id === "hub") return 160;
+        return 85;
+      }).strength(0.7))
+      .force("charge", d3.forceManyBody().strength(d => d.id === "hub" ? -600 : -220))
+      .force("center", d3.forceCenter(width / 2, height / 2))
+      .force("collide", d3.forceCollide().radius(d => d.val * 2.2));
+
+    // Particle flow animation on links
+    function initParticles() {
+      particles = [];
+      for (let i = 0; i < 28; i++) {
+        const link = graphData.links[Math.floor(Math.random() * graphData.links.length)];
+        particles.push({
+          link: link,
+          progress: Math.random(),
+          speed: 0.004 + Math.random() * 0.007
+        });
+      }
+    }
+    initParticles();
+
+    // D3 Zoom Setup
+    const zoom = d3.zoom()
+      .scaleExtent([0.15, 4])
+      .on("zoom", (event) => {
+        transform = event.transform;
+      });
+
+    d3.select(canvas)
+      .call(zoom)
+      .on("dblclick.zoom", null);
+
+    // Main Draw Function (Canvas 60fps loop)
+    function render() {
+      ctx.save();
+      ctx.clearRect(0, 0, width, height);
+
+      // Apply zoom & pan transform
+      ctx.translate(transform.x, transform.y);
+      ctx.scale(transform.k, transform.k);
+
+      // Connected nodes set for highlight
+      const activeNode = hoveredNode || selectedNode;
+      const connectedNodeIds = new Set();
+      if (activeNode) {
+        connectedNodeIds.add(activeNode.id);
+        graphData.links.forEach(l => {
+          if (l.source.id === activeNode.id) connectedNodeIds.add(l.target.id);
+          if (l.target.id === activeNode.id) connectedNodeIds.add(l.source.id);
+        });
+      }
+
+      // 1. Draw Links
+      graphData.links.forEach(link => {
+        const isHighlight = activeNode && (link.source.id === activeNode.id || link.target.id === activeNode.id);
+        const isDimmed = activeNode && !isHighlight;
+
+        ctx.beginPath();
+        ctx.moveTo(link.source.x, link.source.y);
+        ctx.lineTo(link.target.x, link.target.y);
+        ctx.lineWidth = isHighlight ? 2.5 : 1.2;
+        ctx.strokeStyle = isHighlight 
+          ? "rgba(168, 85, 247, 0.85)" 
+          : isDimmed 
+            ? "rgba(47, 47, 61, 0.25)" 
+            : "rgba(75, 75, 95, 0.45)";
+        ctx.stroke();
+      });
+
+      // 2. Draw Animated Particles
+      if (enableParticles && (!activeNode || connectedNodeIds.size > 0)) {
+        particles.forEach(p => {
+          p.progress += p.speed;
+          if (p.progress > 1) p.progress = 0;
+
+          const sx = p.link.source.x;
+          const sy = p.link.source.y;
+          const tx = p.link.target.x;
+          const ty = p.link.target.y;
+
+          const px = sx + (tx - sx) * p.progress;
+          const py = sy + (ty - sy) * p.progress;
+
+          const isHighlight = activeNode && (p.link.source.id === activeNode.id || p.link.target.id === activeNode.id);
+
+          ctx.beginPath();
+          ctx.arc(px, py, isHighlight ? 2.8 : 1.8, 0, 2 * Math.PI);
+          ctx.fillStyle = isHighlight ? "#c084fc" : "rgba(168, 85, 247, 0.4)";
+          ctx.fill();
+        });
+      }
+
+      // 3. Draw Nodes
+      graphData.nodes.forEach(node => {
+        const isSelected = selectedNode && node.id === selectedNode.id;
+        const isHovered = hoveredNode && node.id === hoveredNode.id;
+        const isConnected = connectedNodeIds.has(node.id);
+        const isDimmed = activeNode && !isConnected;
+
+        const radius = node.val;
+
+        ctx.save();
+        ctx.translate(node.x, node.y);
+
+        // Ambient Outer Glow
+        if (isSelected || isHovered) {
+          const glowRadius = radius * 2.2;
+          const grad = ctx.createRadialGradient(0, 0, radius * 0.5, 0, 0, glowRadius);
+          grad.addColorStop(0, node.color);
+          grad.addColorStop(1, "transparent");
+          ctx.beginPath();
+          ctx.arc(0, 0, glowRadius, 0, 2 * Math.PI);
+          ctx.fillStyle = grad;
+          ctx.fill();
+        }
+
+        // Selection Border Ring
+        if (isSelected) {
+          ctx.beginPath();
+          ctx.arc(0, 0, radius + 5, 0, 2 * Math.PI);
+          ctx.strokeStyle = "#ffffff";
+          ctx.lineWidth = 2.5;
+          ctx.stroke();
+        }
+
+        // Main Node Circle
+        ctx.beginPath();
+        ctx.arc(0, 0, radius, 0, 2 * Math.PI);
+        ctx.fillStyle = isDimmed ? "rgba(45, 45, 55, 0.4)" : node.color;
+        ctx.fill();
+
+        // Node Inner Highlight/Bevel
+        if (!isDimmed) {
+          ctx.beginPath();
+          ctx.arc(0, 0, radius, 0, 2 * Math.PI);
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+        }
+
+        // Node Labels (Obsidian Style Text)
+        const showLabel = transform.k > 0.45 || node.val > 14 || isConnected;
+        if (showLabel) {
+          ctx.font = `${node.id === "hub" ? "bold 13px" : "500 11px"} 'Inter', sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+
+          // Text Background Shadow
+          ctx.fillStyle = "rgba(18, 18, 22, 0.85)";
+          const textWidth = ctx.measureText(node.title).width;
+          ctx.fillRect(-textWidth / 2 - 4, radius + 5, textWidth + 8, 18);
+
+          // Text
+          ctx.fillStyle = isDimmed ? "rgba(139, 141, 152, 0.3)" : (isSelected || isConnected ? "#ffffff" : "#c6c7cd");
+          ctx.fillText(node.title, 0, radius + 14);
+        }
+
+        ctx.restore();
+      });
+
+      ctx.restore();
+      requestAnimationFrame(render);
+    }
+    requestAnimationFrame(render);
+
+    // -------------------------------------------------------------------------
+    // INTERACTION: MOUSE & TOUCH EVENTS
+    // -------------------------------------------------------------------------
+    function getNodeAt(x, y) {
+      const graphX = (x - transform.x) / transform.k;
+      const graphY = (y - transform.y) / transform.k;
+
+      for (let i = graphData.nodes.length - 1; i >= 0; i--) {
+        const node = graphData.nodes[i];
+        const dist = Math.hypot(node.x - graphX, node.y - graphY);
+        if (dist <= node.val + 6) return node;
+      }
+      return null;
+    }
+
+    // Drag behavior via Canvas
+    let draggedNode = null;
+
+    canvas.addEventListener("mousedown", (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const node = getNodeAt(e.clientX - rect.left, e.clientY - rect.top);
+      if (node) {
+        draggedNode = node;
+        node.fx = node.x;
+        node.fy = node.y;
+        simulation.alphaTarget(0.3).restart();
+      }
+    });
+
+    window.addEventListener("mousemove", (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      if (draggedNode) {
+        draggedNode.fx = (mouseX - transform.x) / transform.k;
+        draggedNode.fy = (mouseY - transform.y) / transform.k;
+      } else {
+        const node = getNodeAt(mouseX, mouseY);
+        hoveredNode = node;
+
+        if (node) {
+          canvas.style.cursor = "pointer";
+          tooltip.style.display = "block";
+          tooltip.style.left = (e.clientX + 14) + "px";
+          tooltip.style.top = (e.clientY + 14) + "px";
+          tooltip.innerHTML = `
+            <div style="font-weight: 600; color: ${node.color}; margin-bottom: 3px;">${node.title}</div>
+            <div style="font-size: 11px; color: #a1a1aa;">${node.summary}</div>
+            <div style="margin-top: 5px; font-size: 10px; font-family: monospace; color: #71717a;">Click para abrir nota</div>
+          `;
+        } else {
+          canvas.style.cursor = "grab";
+          tooltip.style.display = "none";
+        }
+      }
+    });
+
+    window.addEventListener("mouseup", () => {
+      if (draggedNode) {
+        if (!draggedNode.fixed) {
+          draggedNode.fx = null;
+          draggedNode.fy = null;
+        }
+        draggedNode = null;
+        simulation.alphaTarget(0);
+      }
+    });
+
+    canvas.addEventListener("click", (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const node = getNodeAt(e.clientX - rect.left, e.clientY - rect.top);
+      if (node) {
+        selectNode(node);
+      }
+    });
+
+    // Node Selection & Obsidian Note Rendering
+    function selectNode(node) {
+      selectedNode = node;
+      renderNotePanel(node);
+
+      // Smooth pan camera towards the selected node
+      const targetX = width / 2 - node.x * transform.k;
+      const targetY = height / 2 - node.y * transform.k;
+
+      d3.select(canvas).transition()
+        .duration(600)
+        .call(zoom.transform, d3.zoomIdentity.translate(targetX, targetY).scale(Math.max(transform.k, 1.15)));
+    }
+
+    function selectNodeById(id) {
+      const node = graphData.nodes.find(n => n.id === id);
+      if (node) selectNode(node);
+    }
+
+    function renderNotePanel(node) {
+      const pane = document.getElementById("note-pane");
+      const openBtn = document.getElementById("open-pane-btn");
+      pane.classList.remove("collapsed");
+      openBtn.style.display = "none";
+
+      document.getElementById("note-category-label").textContent = `Manual / ${node.category}`;
+
+      // Calculate connected nodes for backlinks
+      const connected = [];
+      graphData.links.forEach(l => {
+        if (l.source.id === node.id) connected.push(l.target);
+        if (l.target.id === node.id) connected.push(l.source);
+      });
+
+      const uniqueConnected = Array.from(new Set(connected));
+
+      const tagPills = node.tags.map(t => `<span class="vault-tag">${t}</span>`).join(" ");
+
+      const linksHtml = uniqueConnected.map(targetNode => `
+        <span class="wikilink" onclick="selectNodeById('${targetNode.id}')">
+          <i data-lucide="corner-down-right" style="width: 12px; height: 12px;"></i>
+          ${targetNode.title}
+        </span>
+      `).join("");
+
+      document.getElementById("note-view").innerHTML = `
+        <div style="margin-bottom: 14px; display: flex; flex-wrap: wrap; gap: 6px;">
+          ${tagPills}
+        </div>
+        <div class="note-body">
+          ${node.content}
+        </div>
+        <div class="connections-section">
+          <div class="connections-title">
+            <i data-lucide="git-branch" style="width: 14px; height: 14px;"></i>
+            Conexiones y Referencias (${uniqueConnected.length})
+          </div>
+          <div class="links-grid">
+            ${linksHtml || '<span style="font-size: 12px; color: var(--text-muted);">Sin conexiones salientes</span>'}
+          </div>
+        </div>
+      `;
+
+      lucide.createIcons();
+    }
+
+    // Initialize with Hub Content
+    renderNotePanel(selectedNode);
+
+    // -------------------------------------------------------------------------
+    // CONTROLS & ACTIONS
+    // -------------------------------------------------------------------------
+    // Center Graph Zoom
+    document.getElementById("btn-reset-zoom").addEventListener("click", () => {
+      d3.select(canvas).transition().duration(750).call(
+        zoom.transform,
+        d3.zoomIdentity.translate(width / 2, height / 2).scale(0.85).translate(-graphData.nodes[0].x, -graphData.nodes[0].y)
+      );
+    });
+
+    // Zoom Buttons
+    document.getElementById("zoom-in").addEventListener("click", () => {
+      d3.select(canvas).transition().duration(250).call(zoom.scaleBy, 1.3);
+    });
+    document.getElementById("zoom-out").addEventListener("click", () => {
+      d3.select(canvas).transition().duration(250).call(zoom.scaleBy, 0.7);
+    });
+
+    // Toggle Particles
+    document.getElementById("toggle-particles").addEventListener("click", function() {
+      enableParticles = !enableParticles;
+      this.classList.toggle("active", enableParticles);
+    });
+
+    // Toggle Physics
+    const btnForces = document.getElementById("btn-toggle-forces");
+    btnForces.addEventListener("click", () => {
+      isPhysicsActive = !isPhysicsActive;
+      if (isPhysicsActive) {
+        simulation.alphaTarget(0.3).restart();
+        btnForces.classList.add("active");
+      } else {
+        simulation.stop();
+        btnForces.classList.remove("active");
+      }
+    });
+
+    // Close / Open Drawer
+    document.getElementById("close-pane-btn").addEventListener("click", () => {
+      document.getElementById("note-pane").classList.add("collapsed");
+      document.getElementById("open-pane-btn").style.display = "flex";
+    });
+
+    document.getElementById("open-pane-btn").addEventListener("click", () => {
+      document.getElementById("note-pane").classList.remove("collapsed");
+      document.getElementById("open-pane-btn").style.display = "none";
+    });
+
+    // Real-time Search Filter
+    const searchInput = document.getElementById("node-search");
+    searchInput.addEventListener("input", (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      if (!q) {
+        hoveredNode = null;
+        return;
+      }
+      const match = graphData.nodes.find(n => 
+        n.title.toLowerCase().includes(q) || 
+        n.summary.toLowerCase().includes(q) ||
+        n.tags.some(t => t.toLowerCase().includes(q))
+      );
+      if (match) {
+        hoveredNode = match;
+      }
+    });
+
+    searchInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && hoveredNode) {
+        selectNode(hoveredNode);
+        searchInput.blur();
+      }
+    });
+
+    // Legend Click Filter
+    document.querySelectorAll(".legend-item").forEach(item => {
+      item.addEventListener("click", () => {
+        const group = item.getAttribute("data-group");
+        const node = graphData.nodes.find(n => n.group === group);
+        if (node) selectNode(node);
+      });
+    });
+
+    // Keyboard Shortcuts (Esc to close, etc)
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        document.getElementById("note-pane").classList.add("collapsed");
+        document.getElementById("open-pane-btn").style.display = "flex";
+      }
+    });
+  </script>
+</body>
+</html>
