@@ -836,12 +836,23 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
             className="w-full text-xl sm:text-2xl font-mono tracking-wider text-center py-4 px-12 border-2 border-indigo-500 rounded-2xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-100 transition-all font-bold"
           />
           <Scan className="absolute left-4 top-1/2 -translate-y-1/2 text-indigo-600 w-6 h-6" />
-          <button
-            type="submit"
-            className="absolute right-3 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700"
-          >
-            Buscar
-          </button>
+          <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setIsVoiceOpen(true)}
+              className="p-2 bg-indigo-100 hover:bg-indigo-200 active:scale-95 text-indigo-700 rounded-xl transition-all flex items-center gap-1 text-xs font-bold shadow-xs"
+              title="Dictar nota o indicación por Voz con IA"
+            >
+              <Mic className="w-4 h-4 text-indigo-600" />
+              <span className="hidden sm:inline">Voz IA</span>
+            </button>
+            <button
+              type="submit"
+              className="px-3 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all active:scale-95"
+            >
+              Buscar
+            </button>
+          </div>
         </form>
 
         {/* Indicador de compatibilidad de hardware real W91A */}
@@ -1140,14 +1151,25 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
                 <Pill className="w-4 h-4 text-indigo-600" /> Prescripción y Tratamiento Médico
               </span>
               {(currentUser?.role === "veterinario" || currentUser?.role === "admin") && !isPrescribingTreatment && editingTreatmentId === null && (
-                <button
-                  type="button"
-                  onClick={handleOpenNewTreatment}
-                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center gap-1 shadow-xs active:scale-95 transition-all"
-                >
-                  <PlusCircle className="w-3.5 h-3.5" />
-                  <span>➕ Instaurar Tratamiento</span>
-                </button>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => setIsVoiceOpen(true)}
+                    className="px-2.5 py-1 bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-800 hover:to-indigo-800 text-white rounded-xl text-xs font-black flex items-center gap-1 shadow-xs active:scale-95 transition-all"
+                    title="Dictar tratamiento médico con Asistente de Voz IA"
+                  >
+                    <Mic className="w-3.5 h-3.5 text-purple-200" />
+                    <span>🎙️ Dictar con IA</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleOpenNewTreatment}
+                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center gap-1 shadow-xs active:scale-95 transition-all"
+                  >
+                    <PlusCircle className="w-3.5 h-3.5" />
+                    <span>➕ Instaurar Tratamiento</span>
+                  </button>
+                </div>
               )}
             </div>
 
