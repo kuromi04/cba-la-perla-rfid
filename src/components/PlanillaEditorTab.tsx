@@ -172,6 +172,10 @@ export const PlanillaEditorTab: React.FC<PlanillaEditorTabProps> = ({
   };
 
   const handleSaveEdit = async () => {
+    if (!canEdit) {
+      setFeedback("⛔ Regla de Oro: Solo Médicos Veterinarios y Administradores tienen autorización para modificar registros.");
+      return;
+    }
     if (!editingRecord || !editingRecord.id) return;
     await db.shelterRecords.update(editingRecord.id, editingRecord);
 
@@ -203,6 +207,10 @@ export const PlanillaEditorTab: React.FC<PlanillaEditorTabProps> = ({
   };
 
   const handleSaveCatEdit = async () => {
+    if (!canEdit) {
+      setFeedback("⛔ Regla de Oro: Solo Médicos Veterinarios y Administradores tienen autorización para modificar registros.");
+      return;
+    }
     if (!editingCat || !editingCat.id) return;
     await db.gateraRecords.update(editingCat.id, editingCat);
 
@@ -240,6 +248,10 @@ export const PlanillaEditorTab: React.FC<PlanillaEditorTabProps> = ({
   };
 
   const handleDelete = async (id?: number, microchip?: string) => {
+    if (!canEdit) {
+      setFeedback("⛔ Regla de Oro: Solo Médicos Veterinarios y Administradores tienen autorización para eliminar registros.");
+      return;
+    }
     if (!id) return;
     if (confirm("¿Estás seguro de eliminar este registro de la planilla?")) {
       await db.shelterRecords.delete(id);
@@ -253,6 +265,10 @@ export const PlanillaEditorTab: React.FC<PlanillaEditorTabProps> = ({
   };
 
   const handleDeleteCat = async (id?: number, microchip?: string) => {
+    if (!canEdit) {
+      setFeedback("⛔ Regla de Oro: Solo Médicos Veterinarios y Administradores tienen autorización para eliminar registros.");
+      return;
+    }
     if (!id) return;
     if (confirm("¿Estás seguro de eliminar este felino de la planilla de Gatera?")) {
       await db.gateraRecords.delete(id);
@@ -267,10 +283,21 @@ export const PlanillaEditorTab: React.FC<PlanillaEditorTabProps> = ({
 
   const handleCreateNew = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canEdit) {
+      setFeedback("⛔ Regla de Oro: Solo Médicos Veterinarios y Administradores tienen autorización para dar de alta registros.");
+      return;
+    }
     if (!newMicrochip || !newDescripcion) return;
 
     const shortChip = newMicrochip.length > 7 ? newMicrochip.slice(-7) : newMicrochip;
     const cleanChip = newMicrochip.trim();
+
+    // REGLA DE ORO: Validar unicidad de microchip
+    const existing = await db.animals.where("microchip").equals(cleanChip).first();
+    if (existing) {
+      setFeedback(`⛔ Regla de Oro: El microchip ${cleanChip} ya existe a nombre de ${existing.name || "S/N"}. No se permiten duplicados.`);
+      return;
+    }
 
     await db.shelterRecords.add({
       section: newSection,
@@ -313,9 +340,21 @@ export const PlanillaEditorTab: React.FC<PlanillaEditorTabProps> = ({
 
   const handleCreateNewCat = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canEdit) {
+      setFeedback("⛔ Regla de Oro: Solo Médicos Veterinarios y Administradores tienen autorización para dar de alta registros.");
+      return;
+    }
     if (!newCatMicrochip || !newCatNombre) return;
 
     const cleanChip = newCatMicrochip.trim();
+
+    // REGLA DE ORO: Validar unicidad de microchip
+    const existing = await db.animals.where("microchip").equals(cleanChip).first();
+    if (existing) {
+      setFeedback(`⛔ Regla de Oro: El microchip ${cleanChip} ya existe a nombre de ${existing.name || "S/N"}. No se permiten duplicados.`);
+      return;
+    }
+
     const shortChip = cleanChip.length > 7 ? cleanChip.slice(-7) : cleanChip;
 
     const newCatItem: GateraCat = {

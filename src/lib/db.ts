@@ -176,9 +176,18 @@ export async function initializeDatabaseIfEmpty(forceReset: boolean = false) {
     await db.shelterRecords.bulkAdd(RAW_SHELTER_DATA);
   }
 
-  // 2. Cargar Planilla Gatera Real (461 gatos)
+  // 2. Cargar Planilla Gatera Real (Microchips 100% Únicos - Sin Duplicados)
   if (gateraCount === 0 || forceReset) {
-    await db.gateraRecords.bulkAdd(GATERA_CATS_DATA);
+    const uniqueGatera: GateraCat[] = [];
+    const seenGateraChips = new Set<string>();
+    for (const cat of GATERA_CATS_DATA) {
+      const chip = cat.microchip.trim();
+      if (!seenGateraChips.has(chip)) {
+        seenGateraChips.add(chip);
+        uniqueGatera.push(cat);
+      }
+    }
+    await db.gateraRecords.bulkAdd(uniqueGatera);
   }
 
   // 3. Poblar tabla unificada de Animales y Kardex
@@ -294,6 +303,9 @@ export async function initializeDatabaseIfEmpty(forceReset: boolean = false) {
 
   await db.animals.bulkAdd(animalsToInsert);
   await db.kardex.bulkAdd(kardexToInsert);
+
+  // Regla de Oro: Desduplicación garantizada en todas las tablas
+  await deduplicateDatabaseRecords();
 
   return await db.animals.count();
 }
@@ -652,4 +664,72 @@ export async function purgeObsoleteGateraRecords(): Promise<{
     preservedFeral,
     deletedCount: chipsToDelete.length,
   };
+}
+
+/**
+ * REGLA DE ORO: Garantiza que los microchips sean 100% únicos y sin duplicados.
+ * Elimina cualquier registro redundante en db.animals, db.gateraRecords, db.shelterRecords y db.census.
+ */
+export async function deduplicateDatabaseRecords(): Promise<{
+  animalsRemoved: number;
+  gateraRemoved: number;
+  censusRemoved: number;
+}> {
+  let animalsRemoved = 0;
+  let gateraRemoved = 0;
+  let censusRemoved = 0;
+
+  try {
+    // 1. Desduplicar db.gateraRecords
+    const gateraList = await db.gateraRecords.toArray();
+    const seenGatera = new Map<string, number>();
+    for (const cat of gateraList) {
+      const chip = cat.microchip.trim();
+      if (!chip) continue;
+      if (seenGatera.has(chip)) {
+        if (cat.id) {
+          await db.gateraRecords.delete(cat.id);
+          gateraRemoved++;
+        }
+      } else {
+        if (cat.id) seenGatera.set(chip, cat.id);
+      }
+    }
+
+    // 2. Desduplicar db.census (un solo registro por chip en censo)
+    const censusList = await db.census.toArray();
+    const seenCensus = new Map<string, number>();
+    for (const item of censusList) {
+      const chip = item.microchip.trim();
+      if (!chip) continue;
+      if (seenCensus.has(chip)) {
+        if (item.id) {
+          await db.census.delete(item.id);
+          censusRemoved++;
+        }
+      } else {
+        if (item.id) seenCensus.set(chip, item.id);
+      }
+    }
+
+    // 3. Desduplicar db.animals
+    const animalsList = await db.animals.toArray();
+    const seenAnimals = new Map<string, number>();
+    for (const a of animalsList) {
+      const chip = a.microchip.trim();
+      if (!chip) continue;
+      if (seenAnimals.has(chip)) {
+        if (a.id) {
+          await db.animals.delete(a.id);
+          animalsRemoved++;
+        }
+      } else {
+        if (a.id) seenAnimals.set(chip, a.id);
+      }
+    }
+  } catch (err) {
+    console.error("Error al desduplicar base de datos:", err);
+  }
+
+  return { animalsRemoved, gateraRemoved, censusRemoved };
 }

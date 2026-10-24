@@ -128,10 +128,29 @@ export async function deleteStaffMember(id: string): Promise<void> {
 }
 
 /**
- * Permisos CBA La Perla:
- * Médicos Veterinarios y Administrador pueden modificar o eliminar animales.
+ * REGLAS DE ORO DEL SISTEMA CBA LA PERLA:
+ * 1. Solo Médicos Veterinarios ('veterinario') y Administradores ('admin')
+ *    tienen autorización para:
+ *    - Editar datos clínicos o ubicaciones de animales
+ *    - Eliminar registros o depurar censos
+ *    - Prescribir, modificar o suspender tratamientos en Kardex
+ *    - Alterar las planillas maestras
+ * 2. Operarios y Auxiliares tienen permisos de lectura, verificación en censo,
+ *    escaneo de chips y registro de dosis aplicadas en su turno de campo.
  */
-export function canEditAnimals(role?: string): boolean {
+export function isVetOrAdmin(role?: string): boolean {
   if (!role) return false;
   return role === "veterinario" || role === "admin";
+}
+
+export function canEditAnimals(role?: string): boolean {
+  return isVetOrAdmin(role);
+}
+
+export function canDeleteRecords(role?: string): boolean {
+  return isVetOrAdmin(role);
+}
+
+export function canModifyPrescriptions(role?: string): boolean {
+  return isVetOrAdmin(role);
 }

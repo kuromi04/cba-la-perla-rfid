@@ -106,6 +106,12 @@ export const KardexTab: React.FC<KardexTabProps> = ({ initialChip = "", currentU
     e.preventDefault();
     if (!newChip || !newTreatment) return;
 
+    const isVetOrAdmin = currentUser ? (currentUser.role === "veterinario" || currentUser.role === "admin") : true;
+    if (!isVetOrAdmin) {
+      setFeedback("⛔ Regla de Oro: Solo Médicos Veterinarios y Administradores tienen autorización para prescribir tratamientos.");
+      return;
+    }
+
     const totalDoses = Number(newTotalDoses) || 7;
     const vetName = currentUser ? currentUser.name : "Dr. Andrés Mendoza (Vet)";
 
@@ -258,23 +264,28 @@ export const KardexTab: React.FC<KardexTabProps> = ({ initialChip = "", currentU
             </p>
           </div>
           <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setIsVoiceOpen(true)}
-              className="p-3 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-2xl flex items-center gap-1.5 text-xs font-bold"
-              title="Dictar por voz"
-            >
-              <Sparkles className="w-4 h-4 text-indigo-600" />
-              <span className="hidden sm:inline">Voz IA</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsNewOpen(true)}
-              className="px-4 py-3 bg-emerald-600 text-white hover:bg-emerald-700 rounded-2xl flex items-center gap-2 text-xs font-black shadow-lg shadow-emerald-600/25 active:scale-95 transition-all"
-            >
-              <PlusCircle className="w-4 h-4" />
-              <span>Prescribir</span>
-            </button>
+            {(currentUser ? (currentUser.role === "veterinario" || currentUser.role === "admin") : true) && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setIsVoiceOpen(true)}
+                  className="p-3 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-2xl flex items-center gap-1.5 text-xs font-bold"
+                  title="Dictar por voz (Vet/Admin)"
+                >
+                  <Sparkles className="w-4 h-4 text-indigo-600" />
+                  <span className="hidden sm:inline">Voz IA</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsNewOpen(true)}
+                  className="px-4 py-3 bg-emerald-600 text-white hover:bg-emerald-700 rounded-2xl flex items-center gap-2 text-xs font-black shadow-lg shadow-emerald-600/25 active:scale-95 transition-all"
+                  title="Prescribir Tratamiento (Vet/Admin)"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  <span>Prescribir (Vet)</span>
+                </button>
+              </>
+            )}
           </div>
         </div>
 

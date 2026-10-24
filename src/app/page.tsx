@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
-import { initializeDatabaseIfEmpty } from "@/lib/db";
+import { initializeDatabaseIfEmpty, deduplicateDatabaseRecords } from "@/lib/db";
 import { ScannerTab } from "@/components/ScannerTab";
 import { PlanillaEditorTab } from "@/components/PlanillaEditorTab";
 import { KardexTab } from "@/components/KardexTab";
@@ -70,8 +70,10 @@ export default function Home() {
   };
 
   useEffect(() => {
-    // 1. Cargar datos 100% reales de los archivos Excel en IndexedDB
-    initializeDatabaseIfEmpty().catch(console.error);
+    // 1. Cargar datos 100% reales de los archivos Excel en IndexedDB y garantizar cero duplicados
+    initializeDatabaseIfEmpty()
+      .then(() => deduplicateDatabaseRecords())
+      .catch(console.error);
 
     // 2. Detección de sesión y personal registrado dinámicamente
     const initSession = async () => {

@@ -81,6 +81,12 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
   };
 
   const handleExecutePurge = async () => {
+    const isAuthorized = currentUser ? (currentUser.role === "veterinario" || currentUser.role === "admin") : true;
+    if (!isAuthorized) {
+      setSyncMessage("⛔ Regla de Oro: Solo Médicos Veterinarios y Administradores tienen autorización para depurar o eliminar registros.");
+      return;
+    }
+
     setIsPurging(true);
     try {
       const result = await purgeObsoleteGateraRecords();
@@ -274,15 +280,15 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
               <span>Exportar (.xlsx)</span>
             </button>
 
-            {(!currentUser || currentUser.area === "gatera" || currentUser.role === "admin") && (
+            {(currentUser ? (currentUser.role === "veterinario" || currentUser.role === "admin") : true) && (
               <button
                 type="button"
                 onClick={openPurgeModal}
                 className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-2xl text-xs font-black flex items-center gap-2 shadow-lg shadow-rose-600/25 active:scale-95 transition-all"
-                title="Depurar registros de Gatera que no se hayan actualizado en el censo, preservando 100% los felinos ferales"
+                title="Depurar registros de Gatera que no se hayan actualizado en el censo, preservando 100% los felinos ferales (Solo Médicos y Admin)"
               >
                 <Trash2 className="w-4 h-4 text-rose-200" />
-                <span>Depurar Gatera (Nuevo Censo)</span>
+                <span>Depurar Gatera (Vet/Admin)</span>
               </button>
             )}
           </div>

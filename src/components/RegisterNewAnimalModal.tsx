@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
 import { db, Animal } from "@/lib/db";
-import { StaffMember } from "@/lib/staff";
+import { StaffMember, canEditAnimals } from "@/lib/staff";
 import {
   X,
   PlusCircle,
@@ -102,6 +102,26 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
     }
     if (!location.trim()) {
       setErrorMessage("Por favor ingresa el Nº Canil o Ubicación (Columna B de la Hoja de Censo).");
+      scrollToTop();
+      return;
+    }
+    const isAuthorized = currentUser ? canEditAnimals(currentUser.role) : false;
+
+    // REGLA DE ORO: Si el animal ya existe, SOLO médicos y admin pueden editarlo o cambiar sus datos
+    const existingAnimal = await db.animals.where("microchip").equals(cleanChip).first();
+    if (existingAnimal && !isAuthorized) {
+      setErrorMessage(
+        `⛔ Regla de Oro: El microchip ${cleanChip} ya está registrado en el sistema a nombre de ${existingAnimal.name || "S/N"} (${existingAnimal.location}). Solo Médicos Veterinarios y Administradores pueden modificar o editar animales existentes.`
+      );
+      scrollToTop();
+      return;
+    }
+
+    // REGLA DE ORO: Solo médicos y admin pueden prescribir medicaciones
+    if (hasTreatment && medication.trim() && !isAuthorized) {
+      setErrorMessage(
+        `⛔ Regla de Oro: Solo Médicos Veterinarios y Administradores tienen autorización para prescribir tratamientos y medicaciones.`
+      );
       scrollToTop();
       return;
     }

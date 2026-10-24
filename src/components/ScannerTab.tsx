@@ -288,6 +288,12 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
   const handleSaveQuickEdit = async () => {
     if (!currentAnimal) return;
 
+    const isVetOrAdmin = currentUser?.role === "veterinario" || currentUser?.role === "admin";
+    if (!isVetOrAdmin) {
+      setFeedbackMessage("⛔ Regla de Oro: Solo Médicos Veterinarios y Administradores tienen autorización para modificar o reubicar animales.");
+      return;
+    }
+
     const cleanChip = currentAnimal.microchip.trim();
 
     // Actualizar ubicación en db.animals
@@ -663,64 +669,66 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
             );
           })()}
 
-          {/* Modo de Edición Rápida en Campo */}
-          {isEditing ? (
-            <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl space-y-3 text-xs animate-in fade-in">
-              <h4 className="font-bold text-amber-900 uppercase">Modificar Datos de este Animal</h4>
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Mover a Nueva Ubicación:</label>
-                <input
-                  type="text"
-                  value={editLocation}
-                  onChange={(e) => setEditLocation(e.target.value)}
-                  className="w-full p-2.5 bg-white border rounded-xl font-bold"
-                />
+          {/* Modo de Edición Rápida en Campo (EXCLUSIVO MÉDICOS VETERINARIOS Y ADMIN) */}
+          {(currentUser?.role === "veterinario" || currentUser?.role === "admin") && (
+            isEditing ? (
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl space-y-3 text-xs animate-in fade-in">
+                <h4 className="font-bold text-amber-900 uppercase">Modificar Datos de este Animal (Vet/Admin)</h4>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Mover a Nueva Ubicación:</label>
+                  <input
+                    type="text"
+                    value={editLocation}
+                    onChange={(e) => setEditLocation(e.target.value)}
+                    className="w-full p-2.5 bg-white border rounded-xl font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Modificar Medicación:</label>
+                  <textarea
+                    rows={2}
+                    value={editMedication}
+                    onChange={(e) => setEditMedication(e.target.value)}
+                    className="w-full p-2.5 bg-white border rounded-xl"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Modificar Pendientes:</label>
+                  <input
+                    type="text"
+                    value={editPendientes}
+                    onChange={(e) => setEditPendientes(e.target.value)}
+                    className="w-full p-2.5 bg-white border rounded-xl"
+                  />
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditing(false)}
+                    className="w-1/2 py-2.5 bg-slate-200 rounded-xl font-bold"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveQuickEdit}
+                    className="w-1/2 py-2.5 bg-emerald-600 text-white rounded-xl font-bold flex items-center justify-center gap-1 shadow-md"
+                  >
+                    <Save className="w-4 h-4" /> Guardar en Planilla
+                  </button>
+                </div>
               </div>
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Modificar Medicación:</label>
-                <textarea
-                  rows={2}
-                  value={editMedication}
-                  onChange={(e) => setEditMedication(e.target.value)}
-                  className="w-full p-2.5 bg-white border rounded-xl"
-                />
-              </div>
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Modificar Pendientes:</label>
-                <input
-                  type="text"
-                  value={editPendientes}
-                  onChange={(e) => setEditPendientes(e.target.value)}
-                  className="w-full p-2.5 bg-white border rounded-xl"
-                />
-              </div>
-              <div className="flex gap-2 pt-1">
+            ) : (
+              <div className="flex justify-end">
                 <button
                   type="button"
-                  onClick={() => setIsEditing(false)}
-                  className="w-1/2 py-2.5 bg-slate-200 rounded-xl font-bold"
+                  onClick={() => setIsEditing(true)}
+                  className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
                 >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveQuickEdit}
-                  className="w-1/2 py-2.5 bg-emerald-600 text-white rounded-xl font-bold flex items-center justify-center gap-1 shadow-md"
-                >
-                  <Save className="w-4 h-4" /> Guardar en Planilla
+                  <Edit3 className="w-3.5 h-3.5" /> Modificar o reubicar animal (Vet/Admin)
                 </button>
               </div>
-            </div>
-          ) : (
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={() => setIsEditing(true)}
-                className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
-              >
-                <Edit3 className="w-3.5 h-3.5" /> Modificar o reubicar animal
-              </button>
-            </div>
+            )
           )}
 
           {/* 2.5 Semáforo Clínico de Tratamientos y Control de Vencimientos */}
