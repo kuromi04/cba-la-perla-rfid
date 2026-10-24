@@ -381,6 +381,16 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
       // Eliminar tareas de turno
       const tasks = await db.shiftTasks.where("microchip").equals(cleanChip).toArray();
       for (const t of tasks) if (t.id) await db.shiftTasks.delete(t.id);
+    } else {
+      // Traslado / Reubicación: actualizar ubicación en censo y tareas de turno activas
+      const cRec = await db.census.where("microchip").equals(cleanChip).first();
+      if (cRec && cRec.id) {
+        await db.census.update(cRec.id, { location: editLocation });
+      }
+      const tasks = await db.shiftTasks.where("microchip").equals(cleanChip).toArray();
+      for (const t of tasks) {
+        if (t.id) await db.shiftTasks.update(t.id, { location: editLocation });
+      }
     }
 
     if (currentAnimal.species === "gato") {
@@ -916,11 +926,21 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
             </div>
 
             {/* Ubicación Actual */}
-            <div className="px-4 py-2.5 bg-indigo-50 border border-indigo-200 rounded-2xl flex flex-col items-center shrink-0">
+            <div className="px-4 py-2 bg-indigo-50 border border-indigo-200 rounded-2xl flex flex-col items-center shrink-0">
               <span className="text-[10px] font-bold text-indigo-600 uppercase flex items-center gap-1">
                 <MapPin className="w-3 h-3" /> UBICACIÓN
               </span>
               <span className="text-base font-black text-indigo-900 text-center">{currentAnimal.location}</span>
+              {(currentUser?.role === "veterinario" || currentUser?.role === "admin") && !isEditing && (
+                <button
+                  type="button"
+                  onClick={() => setIsEditing(true)}
+                  className="mt-1 text-[10px] font-black text-indigo-700 bg-white hover:bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded-lg flex items-center gap-1 transition-all active:scale-95 shadow-xs"
+                  title="Cambiar de patio, canil o jaula (Traslado)"
+                >
+                  <Edit3 className="w-2.5 h-2.5" /> Trasladar
+                </button>
+              )}
             </div>
           </div>
 
