@@ -241,12 +241,12 @@ export default function Home() {
 
   return (
     <ErrorBoundary>
-      <main className="min-h-screen bg-slate-100 text-slate-900 flex flex-col max-w-xl mx-auto shadow-2xl">
+      <main className="min-h-screen bg-slate-100 text-slate-900 flex flex-col max-w-xl mx-auto shadow-2xl relative">
       {/* 1. Header Oficial: Alcaldía de Medellín & CBA La Perla */}
-      <header className="sticky top-0 z-40 bg-slate-900 text-white p-3.5 shadow-md space-y-2.5">
+      <header className="sticky top-0 z-40 bg-slate-950/95 backdrop-blur-xl border-b border-slate-800 text-white p-3.5 shadow-xl space-y-2.5">
         
         {/* Fila 1: Logotipos Oficiales */}
-        <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+        <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
           <AlcaldiaMedellinLogo className="h-7" />
           <LaPerlaLogo className="h-7" />
         </div>
@@ -257,15 +257,15 @@ export default function Home() {
           <button
             type="button"
             onClick={() => setIsLoginModalOpen(true)}
-            className={`flex items-center gap-2 p-1.5 pr-2.5 rounded-xl border transition-all active:scale-95 text-left ${
+            className={`flex items-center gap-2 p-1.5 pr-2.5 rounded-2xl border transition-all active:scale-95 text-left shadow-xs ${
               isVetOrAdmin
-                ? "bg-slate-800/90 border-emerald-500/50 hover:bg-slate-800"
-                : "bg-slate-800/90 border-amber-500/50 hover:bg-slate-800"
+                ? "bg-slate-900/90 border-emerald-500/50 hover:bg-slate-800/90 hover:border-emerald-400"
+                : "bg-slate-900/90 border-amber-500/50 hover:bg-slate-800/90 hover:border-amber-400"
             }`}
             title="Cambiar usuario o médico veterinario activo"
           >
             <div
-              className={`w-7 h-7 rounded-lg flex items-center justify-center font-black text-[10px] shrink-0 ${
+              className={`w-7 h-7 rounded-xl flex items-center justify-center font-black text-[10px] shrink-0 shadow-xs ${
                 currentUser ? currentUser.avatarColor : "bg-indigo-600 text-white"
               }`}
             >
@@ -274,9 +274,7 @@ export default function Home() {
                   ? "DR"
                   : currentUser.role === "auxiliar"
                   ? "AUX"
-                  : currentUser.role === "operario"
-                  ? "OP"
-                  : "ADM"
+                  : "OP"
               ) : (
                 "➕"
               )}
@@ -301,7 +299,7 @@ export default function Home() {
             <button
               type="button"
               onClick={() => setIsAdminDashboardOpen(true)}
-              className="flex items-center gap-1 bg-gradient-to-r from-purple-700 to-indigo-800 hover:from-purple-600 hover:to-indigo-700 text-white text-[11px] font-black px-2.5 py-1.5 rounded-lg shadow-sm border border-purple-400/40 active:scale-95 transition-all"
+              className="flex items-center gap-1 bg-gradient-to-r from-purple-700 to-indigo-800 hover:from-purple-600 hover:to-indigo-700 text-white text-[11px] font-black px-2.5 py-1.5 rounded-xl shadow-sm border border-purple-400/40 active:scale-95 transition-all"
               title="Panel de Administración, Auditoría y Control de Personal"
             >
               <Shield className="w-3.5 h-3.5 text-purple-300" />
@@ -312,7 +310,7 @@ export default function Home() {
             <button
               type="button"
               onClick={() => setIsMagicModalOpen(true)}
-              className="flex items-center gap-1 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white text-[11px] font-black px-2.5 py-1.5 rounded-lg shadow-sm border border-indigo-400/40 active:scale-95 transition-all"
+              className="flex items-center gap-1 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white text-[11px] font-black px-2.5 py-1.5 rounded-xl shadow-sm border border-indigo-400/40 active:scale-95 transition-all"
               title="Generar Link Mágico para Auxiliares y Operarios"
             >
               <Link2 className="w-3.5 h-3.5" />
@@ -323,7 +321,7 @@ export default function Home() {
             <button
               type="button"
               onClick={() => setIsSupabaseModalOpen(true)}
-              className={`p-1.5 rounded-lg border flex items-center gap-1 text-[10px] font-bold active:scale-95 transition-all ${
+              className={`p-1.5 px-2 rounded-xl border flex items-center gap-1 text-[10px] font-bold active:scale-95 transition-all ${
                 isSupabaseConfigured()
                   ? "bg-blue-500/20 text-blue-300 border-blue-500/30 hover:bg-blue-500/30"
                   : "bg-amber-500/20 text-amber-300 border-amber-500/30 hover:bg-amber-500/30 animate-pulse"
@@ -342,7 +340,7 @@ export default function Home() {
 
             {/* Estado de Red */}
             <span
-              className={`p-1.5 rounded-lg border ${
+              className={`p-1.5 rounded-xl border flex items-center justify-center ${
                 isOnline
                   ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
                   : "bg-amber-500/20 text-amber-300 border-amber-500/30"
@@ -354,14 +352,14 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Fila 3: Sub-barra de Población Activa 100% Real adaptada al área */}
         {/* Fila 3: Sub-barra de Población Activa 100% Real adaptada a GATERA */}
         <div className="pt-1.5 border-t border-slate-800/80 flex items-center justify-between text-xs">
           <span className="text-[10px] uppercase font-bold text-slate-400">
             Sistema Oficial Exclusivo:
           </span>
           <div className="flex gap-2 text-[11px] font-bold">
-            <span className="bg-purple-950 text-purple-300 border border-purple-800 px-2.5 py-0.5 rounded-lg flex items-center gap-1.5 shadow-xs">
+            <span className="bg-purple-950/80 text-purple-300 border border-purple-700/60 px-2.5 py-0.5 rounded-lg flex items-center gap-1.5 shadow-xs">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-ping"></span>
               🐱 Gatera CBA La Perla ({activeCatsCount} Felinos Activos • Censo Dinámico)
             </span>
           </div>
@@ -423,7 +421,7 @@ export default function Home() {
         <button
           type="button"
           onClick={scrollToTop}
-          className="fixed bottom-20 right-4 sm:right-[max(1rem,calc(50%-270px))] z-30 p-3 bg-slate-900/90 hover:bg-slate-900 text-white rounded-full shadow-2xl border-2 border-emerald-500/80 active:scale-90 transition-all duration-300 flex items-center justify-center gap-1.5 text-xs font-black backdrop-blur-md animate-in fade-in zoom-in-90"
+          className="fixed bottom-24 right-4 sm:right-[max(1rem,calc(50%-270px))] z-30 p-3 bg-slate-900/90 hover:bg-slate-900 text-white rounded-full shadow-2xl border-2 border-emerald-500/80 active:scale-90 transition-all duration-300 flex items-center justify-center gap-1.5 text-xs font-black backdrop-blur-md animate-in fade-in zoom-in-90"
           title="Volver al inicio"
           aria-label="Volver arriba"
         >
@@ -466,101 +464,111 @@ export default function Home() {
         }}
       />
 
-      {/* 3. Barra de Navegación Inferior Móvil */}
-      <nav className="fixed bottom-0 left-0 right-0 max-w-xl mx-auto bg-white/95 backdrop-blur-md border-t border-slate-200 px-3 py-2 flex justify-around items-center z-30 shadow-lg">
+      {/* 3. Barra de Navegación Inferior Flotante ("Glass Dock") */}
+      <nav className="fixed bottom-3 left-3 right-3 max-w-lg mx-auto bg-slate-950/90 backdrop-blur-2xl border border-slate-800/90 rounded-3xl p-1.5 px-3 flex justify-between items-center z-30 shadow-2xl shadow-black/60">
         <button
           type="button"
           onClick={() => setActiveTab("scanner")}
-          className={`flex flex-col items-center gap-1 py-1 px-2 rounded-2xl transition-all ${
+          className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-2xl transition-all duration-200 active:scale-95 ${
             activeTab === "scanner"
-              ? "text-emerald-700 font-black scale-105"
-              : "text-slate-400 font-medium hover:text-slate-600"
+              ? "text-emerald-400 font-black scale-105"
+              : "text-slate-400 font-medium hover:text-slate-200"
           }`}
         >
           <div
-            className={`p-2 rounded-2xl ${
-              activeTab === "scanner" ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/30" : ""
+            className={`p-2 rounded-2xl transition-all ${
+              activeTab === "scanner"
+                ? "bg-emerald-600 text-white shadow-lg shadow-emerald-500/40 ring-2 ring-emerald-400/50"
+                : "hover:bg-slate-800/70"
             }`}
           >
             <Scan className="w-5 h-5" />
           </div>
-          <span className="text-[10px]">Escanear</span>
+          <span className="text-[10px] tracking-wide">Escanear</span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab("turnos")}
-          className={`flex flex-col items-center gap-1 py-1 px-2 rounded-2xl transition-all ${
+          className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-2xl transition-all duration-200 active:scale-95 ${
             activeTab === "turnos"
-              ? "text-indigo-700 font-black scale-105"
-              : "text-slate-400 font-medium hover:text-slate-600"
+              ? "text-indigo-400 font-black scale-105"
+              : "text-slate-400 font-medium hover:text-slate-200"
           }`}
         >
           <div
-            className={`p-2 rounded-2xl ${
-              activeTab === "turnos" ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30" : ""
+            className={`p-2 rounded-2xl transition-all ${
+              activeTab === "turnos"
+                ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/40 ring-2 ring-indigo-400/50"
+                : "hover:bg-slate-800/70"
             }`}
           >
             <CheckSquare className="w-5 h-5" />
           </div>
-          <span className="text-[10px]">Turnos</span>
+          <span className="text-[10px] tracking-wide">Turnos</span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab("planilla")}
-          className={`flex flex-col items-center gap-1 py-1 px-2 rounded-2xl transition-all ${
+          className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-2xl transition-all duration-200 active:scale-95 ${
             activeTab === "planilla"
-              ? "text-emerald-700 font-black scale-105"
-              : "text-slate-400 font-medium hover:text-slate-600"
+              ? "text-emerald-400 font-black scale-105"
+              : "text-slate-400 font-medium hover:text-slate-200"
           }`}
         >
           <div
-            className={`p-2 rounded-2xl ${
-              activeTab === "planilla" ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/30" : ""
+            className={`p-2 rounded-2xl transition-all ${
+              activeTab === "planilla"
+                ? "bg-emerald-600 text-white shadow-lg shadow-emerald-500/40 ring-2 ring-emerald-400/50"
+                : "hover:bg-slate-800/70"
             }`}
           >
             <TableProperties className="w-5 h-5" />
           </div>
-          <span className="text-[10px]">Planilla</span>
+          <span className="text-[10px] tracking-wide">Planilla</span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab("kardex")}
-          className={`flex flex-col items-center gap-1 py-1 px-2 rounded-2xl transition-all ${
+          className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-2xl transition-all duration-200 active:scale-95 ${
             activeTab === "kardex"
-              ? "text-emerald-700 font-black scale-105"
-              : "text-slate-400 font-medium hover:text-slate-600"
+              ? "text-emerald-400 font-black scale-105"
+              : "text-slate-400 font-medium hover:text-slate-200"
           }`}
         >
           <div
-            className={`p-2 rounded-2xl ${
-              activeTab === "kardex" ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/30" : ""
+            className={`p-2 rounded-2xl transition-all ${
+              activeTab === "kardex"
+                ? "bg-emerald-600 text-white shadow-lg shadow-emerald-500/40 ring-2 ring-emerald-400/50"
+                : "hover:bg-slate-800/70"
             }`}
           >
             <ClipboardList className="w-5 h-5" />
           </div>
-          <span className="text-[10px]">Kardex</span>
+          <span className="text-[10px] tracking-wide">Kardex</span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab("census")}
-          className={`flex flex-col items-center gap-1 py-1 px-2 rounded-2xl transition-all ${
+          className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-2xl transition-all duration-200 active:scale-95 ${
             activeTab === "census"
-              ? "text-emerald-700 font-black scale-105"
-              : "text-slate-400 font-medium hover:text-slate-600"
+              ? "text-emerald-400 font-black scale-105"
+              : "text-slate-400 font-medium hover:text-slate-200"
           }`}
         >
           <div
-            className={`p-2 rounded-2xl ${
-              activeTab === "census" ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/30" : ""
+            className={`p-2 rounded-2xl transition-all ${
+              activeTab === "census"
+                ? "bg-emerald-600 text-white shadow-lg shadow-emerald-500/40 ring-2 ring-emerald-400/50"
+                : "hover:bg-slate-800/70"
             }`}
           >
             <FileSpreadsheet className="w-5 h-5" />
           </div>
-          <span className="text-[10px]">Censo</span>
+          <span className="text-[10px] tracking-wide">Censo</span>
         </button>
       </nav>
     </main>

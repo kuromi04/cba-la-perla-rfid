@@ -594,22 +594,22 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
 
         {/* Dashboard de Cumplimiento & Faltantes del Turno */}
         <div className="grid grid-cols-3 gap-2 pt-1 text-center">
-          <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-2xl">
+          <div className="p-3 bg-gradient-to-b from-emerald-50 to-white border border-emerald-200/80 rounded-2xl shadow-xs">
             <span className="text-[10px] font-black uppercase text-emerald-700 block">Cumplidas Hoy</span>
-            <span className="text-lg font-black text-emerald-900">{completedCount}</span>
-            <span className="text-[9px] text-emerald-600 block">labores OK</span>
+            <span className="text-xl font-black text-emerald-950 font-mono">{completedCount}</span>
+            <span className="text-[9px] text-emerald-600 font-bold block">labores OK</span>
           </div>
 
-          <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-2xl">
+          <div className="p-3 bg-gradient-to-b from-amber-50 to-white border border-amber-200/80 rounded-2xl shadow-xs">
             <span className="text-[10px] font-black uppercase text-amber-700 block">Faltantes</span>
-            <span className="text-lg font-black text-amber-900">{tasks.length - completedCount}</span>
-            <span className="text-[9px] text-amber-600 block">pendientes turno</span>
+            <span className="text-xl font-black text-amber-950 font-mono">{tasks.length - completedCount}</span>
+            <span className="text-[9px] text-amber-600 font-bold block">pendientes turno</span>
           </div>
 
-          <div className="p-2.5 bg-purple-50 border border-purple-200 rounded-2xl">
+          <div className="p-3 bg-gradient-to-b from-purple-50 to-white border border-purple-200/80 rounded-2xl shadow-xs">
             <span className="text-[10px] font-black uppercase text-purple-700 block">Efectividad</span>
-            <span className="text-lg font-black text-purple-900">{progressPercent}%</span>
-            <span className="text-[9px] text-purple-600 block">del total</span>
+            <span className="text-xl font-black text-purple-950 font-mono">{progressPercent}%</span>
+            <span className="text-[9px] text-purple-600 font-bold block">del total</span>
           </div>
         </div>
 
@@ -629,16 +629,16 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
         )}
 
         {/* Barra de Progreso de Gatera */}
-        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+        <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200/80 space-y-2 shadow-xs">
           <div className="flex items-center justify-between text-xs font-bold text-slate-700">
             <span>Cumplimiento Total GATERA:</span>
             <span className="font-mono text-sm text-purple-700 font-black">
               {completedCount} / {tasks.length} labores ({progressPercent}%)
             </span>
           </div>
-          <div className="w-full bg-slate-200 rounded-full h-3.5 overflow-hidden">
+          <div className="w-full bg-slate-200 rounded-full h-3.5 overflow-hidden p-0.5 shadow-inner">
             <div
-              className="h-full rounded-full transition-all duration-500 shadow-sm bg-purple-600"
+              className="h-full rounded-full transition-all duration-500 shadow-sm bg-gradient-to-r from-purple-600 via-indigo-600 to-emerald-500"
               style={{ width: `${progressPercent}%` }}
             />
           </div>

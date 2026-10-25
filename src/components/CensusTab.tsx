@@ -478,11 +478,11 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
                 <button
                   type="button"
                   onClick={handleCleanDuplicatesAndDemo}
-                  className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-2xl text-xs font-black flex items-center gap-2 shadow-lg shadow-amber-600/25 active:scale-95 transition-all"
+                  className="px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-xl text-xs font-black flex items-center gap-1.5 active:scale-95 transition-all"
                   title="Eliminar datos de prueba demo y unificar chips duplicados"
                 >
-                  <Sparkles className="w-4 h-4 text-amber-100" />
-                  <span>Limpiar Demos y Duplicados</span>
+                  <Sparkles className="w-3.5 h-3.5 text-amber-700" />
+                  <span>Limpiar Duplicados</span>
                 </button>
 
                 {(currentUser ? (currentUser.role === "veterinario" || currentUser.role === "admin") : true) && (
@@ -490,55 +490,76 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
                     <button
                       type="button"
                       onClick={() => setIsRecordDeathOpen(true)}
-                      className="px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-slate-100 rounded-2xl text-xs font-black flex items-center gap-2 shadow-md active:scale-95 transition-all border border-slate-700"
+                      className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-black flex items-center gap-1.5 active:scale-95 transition-all border border-slate-300"
                       title="Registrar el fallecimiento de un felino para descontarlo del censo activo"
                     >
-                      <HeartOff className="w-4 h-4 text-rose-400" />
-                      <span>Registrar Defunción (Vet/Admin)</span>
+                      <HeartOff className="w-3.5 h-3.5 text-rose-600" />
+                      <span>Registrar Defunción</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={openPurgeModal}
-                      className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-2xl text-xs font-black flex items-center gap-2 shadow-lg shadow-rose-600/25 active:scale-95 transition-all"
-                      title="Depurar registros de Gatera que no se hayan actualizado en el censo, preservando 100% los felinos ferales (Solo Médicos y Admin)"
+                      className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-900 border border-rose-300 rounded-xl text-xs font-black flex items-center gap-1.5 active:scale-95 transition-all"
+                      title="Depurar registros obsoletos de Gatera preservando 100% felinos ferales"
                     >
-                      <Trash2 className="w-4 h-4 text-rose-200" />
-                      <span>Depurar Gatera (Vet/Admin)</span>
+                      <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                      <span>Depurar Gatera</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={handleClearTodayCensus}
-                      className="px-4 py-2.5 bg-slate-700 hover:bg-slate-800 text-white rounded-2xl text-xs font-black flex items-center gap-2 shadow-lg shadow-slate-700/25 active:scale-95 transition-all"
+                      className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 active:scale-95 transition-all border border-slate-200"
                       title="Vaciar las lecturas del censo actual para iniciar una jornada limpia desde cero"
                     >
-                      <RotateCcw className="w-4 h-4 text-slate-300" />
-                      <span>Reiniciar Censo (Vet/Admin)</span>
+                      <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Reiniciar Ronda</span>
                     </button>
                   </>
                 )}
               </div>
             </div>
 
-            {/* Tarjetas de estadísticas */}
-            <div className="grid grid-cols-3 gap-2 text-center pt-2">
-              <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-2xl">
-                <span className="text-[10px] uppercase font-black text-indigo-700 block">Escaneados Hoy</span>
-                <span className="text-2xl font-black text-indigo-900">{censusList.length}</span>
-                <span className="text-[9px] text-indigo-500 block">verificados W91A</span>
+            {/* Barra de Progreso del Censo Diario */}
+            <div className="space-y-1.5 pt-2">
+              <div className="flex items-center justify-between text-xs font-black">
+                <span className="text-slate-700 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                  <span>Progreso de Verificación Física Diario</span>
+                </span>
+                <span className="text-emerald-700 font-mono text-xs font-black">
+                  {totalAnimals > 0 ? Math.min(100, Math.round((censusList.length / totalAnimals) * 100)) : 0}% ({censusList.length} de {totalAnimals} censados)
+                </span>
               </div>
-              <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-2xl">
+              <div className="w-full bg-slate-100 rounded-full h-3 p-0.5 border border-slate-200 overflow-hidden shadow-inner">
+                <div
+                  className="bg-gradient-to-r from-emerald-500 to-teal-500 h-full rounded-full transition-all duration-500 shadow-sm"
+                  style={{
+                    width: `${totalAnimals > 0 ? Math.min(100, Math.round((censusList.length / totalAnimals) * 100)) : 0}%`,
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Tarjetas de estadísticas */}
+            <div className="grid grid-cols-3 gap-2 text-center pt-1">
+              <div className="p-3 bg-gradient-to-b from-indigo-50/80 to-white border border-indigo-100 rounded-2xl shadow-xs">
+                <span className="text-[10px] uppercase font-black text-indigo-700 block">Escaneados Hoy</span>
+                <span className="text-2xl font-black text-indigo-900 font-mono">{censusList.length}</span>
+                <span className="text-[9px] text-indigo-500 font-bold block">verificados W91A</span>
+              </div>
+              <div className="p-3 bg-gradient-to-b from-emerald-50/80 to-white border border-emerald-100 rounded-2xl shadow-xs">
                 <span className="text-[10px] uppercase font-black text-emerald-700 block">Con Tratamiento</span>
-                <span className="text-2xl font-black text-emerald-900">
+                <span className="text-2xl font-black text-emerald-900 font-mono">
                   {censusList.filter((c) => c.treatmentCount > 0).length}
                 </span>
-                <span className="text-[9px] text-emerald-500 block">en seguimiento</span>
+                <span className="text-[9px] text-emerald-600 font-bold block">en seguimiento</span>
               </div>
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl">
-                <span className="text-[10px] uppercase font-black text-slate-700 block">Población Activa</span>
-                <span className="text-2xl font-black text-slate-900">{totalAnimals.toLocaleString()}</span>
-                <span className="text-[9px] text-slate-500 block">excluye fallecidos</span>
+              <div className="p-3 bg-gradient-to-b from-purple-50/80 to-white border border-purple-100 rounded-2xl shadow-xs">
+                <span className="text-[10px] uppercase font-black text-purple-700 block">Población Activa</span>
+                <span className="text-2xl font-black text-purple-900 font-mono">{totalAnimals.toLocaleString()}</span>
+                <span className="text-[9px] text-purple-500 font-bold block">excluye fallecidos</span>
               </div>
             </div>
 
