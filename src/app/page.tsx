@@ -164,7 +164,7 @@ export default function Home() {
         } else {
           // Recuperar última sesión guardada si existe (ignorando sesiones antiguas de admin)
           const savedUserId = localStorage.getItem("cba_laperla_active_user");
-          if (savedUserId && savedUserId !== "staff-master-admin") {
+          if (savedUserId && !savedUserId.toLowerCase().includes("admin")) {
             const found = staff.find((s) => s.id === savedUserId);
             if (found) {
               setCurrentUser(found);
@@ -459,7 +459,7 @@ export default function Home() {
         isOpen={isSupabaseModalOpen}
         onClose={() => setIsSupabaseModalOpen(false)}
         onConfigChanged={async () => {
-          const list = await getAllStaff();
+          const list = await getFieldStaff();
           if (list.length > 0 && !currentUser) {
             setCurrentUser(list[0]);
           }

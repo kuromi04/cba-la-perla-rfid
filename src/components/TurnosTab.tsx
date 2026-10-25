@@ -8,7 +8,7 @@ import {
   revertDoseFromTreatment,
   resetDatabaseWithRealData,
 } from "@/lib/db";
-import { getAllStaff, StaffMember } from "@/lib/staff";
+import { getFieldStaff, StaffMember, MASTER_ADMIN } from "@/lib/staff";
 import { AssignAnimalModal, SelectedAnimalInfo } from "@/components/AssignAnimalModal";
 import {
   CheckCircle2,
@@ -58,7 +58,11 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
   const [tasks, setTasks] = useState<ShiftTask[]>([]);
   const [activeShift, setActiveShift] = useState<"todos" | "mañana" | "tarde" | "noche">("todos");
   const [activeLabor, setActiveLabor] = useState<string>("todas");
-  const [staffFilter, setStaffFilter] = useState<string>(currentStaffName || "todos");
+  const [staffFilter, setStaffFilter] = useState<string>(
+    currentRole === "admin" || (currentStaffName && currentStaffName.toLowerCase().includes("admin"))
+      ? "todos"
+      : (currentStaffName || "todos")
+  );
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
   const [connectedStaff, setConnectedStaff] = useState<ConnectedStaff[]>([]);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -111,18 +115,38 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
       }
     }
 
+    // Sanitizar y liberar cualquier tarea asignada antiguamente a usuarios administradores
+    for (const lt of list) {
+      if (lt.assignedTo && (lt.assignedTo.toLowerCase().includes("admin") || lt.assignedTo.toLowerCase().includes("camilo"))) {
+        lt.assignedTo = undefined;
+        lt.assignedRole = undefined;
+        if (lt.id) {
+          db.shiftTasks.update(lt.id, { assignedTo: undefined, assignedRole: undefined }).catch(() => {});
+        }
+      }
+    }
+
     setTasks([...list]);
     if (!silent) setIsSyncingCloud(false);
   };
 
   const loadStaffAndPresence = async () => {
-    const list = await getAllStaff();
+    // Cargar EXCLUSIVAMENTE personal operativo de campo (excluye cuentas de administrador)
+    const list = await getFieldStaff();
     setStaffList(list);
 
     if (typeof window !== "undefined" && navigator.onLine) {
       try {
         const connected = await getConnectedStaff();
-        setConnectedStaff(connected);
+        // Filtrar administradores para no mostrarlos en la cuadrícula de personal de campo
+        const fieldConnected = connected.filter(
+          (c) =>
+            c.role !== "admin" &&
+            c.staff_id !== MASTER_ADMIN.id &&
+            !c.staff_name.toLowerCase().includes("admin") &&
+            !c.staff_name.toLowerCase().includes("camilo")
+        );
+        setConnectedStaff(fieldConnected);
       } catch (err) {
         console.warn("Connected staff fetch error:", err);
       }
@@ -398,9 +422,7 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
                             ? "DR"
                             : st.role === "auxiliar"
                             ? "AUX"
-                            : st.role === "operario"
-                            ? "OP"
-                            : "ADM"}
+                            : "OP"}
                         </div>
                         <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white"></span>
                       </div>
@@ -477,9 +499,7 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
                             ? "DR"
                             : st.role === "auxiliar"
                             ? "AUX"
-                            : st.role === "operario"
-                            ? "OP"
-                            : "ADM"}
+                            : "OP"}
                         </div>
                         <span
                           className={`absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-white ${
@@ -763,7 +783,7 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
 
                   {task.isCompleted && task.completedAt && (
                     <div className="text-[10px] text-emerald-700 font-bold flex items-center gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Administrado por {task.completedBy || "Personal"}
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Dosis aplicada por: {task.completedBy || "Personal de Turno"}
                       {(() => {
                         try {
                           const d = new Date(task.completedAt);

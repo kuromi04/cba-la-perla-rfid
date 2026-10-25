@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { db, ShiftTask, Animal } from "@/lib/db";
-import { StaffMember, getAllStaff } from "@/lib/staff";
+import { StaffMember, getFieldStaff } from "@/lib/staff";
 import {
   X,
   Search,
@@ -66,7 +66,7 @@ export const AssignAnimalModal: React.FC<AssignAnimalModalProps> = ({
   const loadStaffMembers = async () => {
     setIsRefreshingStaff(true);
     try {
-      const list = await getAllStaff();
+      const list = await getFieldStaff();
       setStaffList(list);
       if (!assignedStaff && list.length > 0) {
         setAssignedStaff(list[0]);

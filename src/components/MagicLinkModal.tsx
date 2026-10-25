@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
-import { StaffMember, getAllStaff } from "@/lib/staff";
+import { StaffMember, getFieldStaff } from "@/lib/staff";
 import { getSupabaseCredentials } from "@/lib/supabase";
 import { Link2, Copy, Check, MessageSquare, ExternalLink, X, UserPlus, Users, RefreshCw } from "lucide-react";
 
@@ -21,7 +21,7 @@ export const MagicLinkModal: React.FC<MagicLinkModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      getAllStaff().then((list) => {
+      getFieldStaff().then((list) => {
         setStaffList(list);
         if (list.length > 0) {
           setSelectedStaff(list[0]);
