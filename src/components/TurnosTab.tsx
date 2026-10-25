@@ -59,7 +59,7 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
   const [activeShift, setActiveShift] = useState<"todos" | "mañana" | "tarde" | "noche">("todos");
   const [activeLabor, setActiveLabor] = useState<string>("todas");
   const [staffFilter, setStaffFilter] = useState<string>(
-    currentRole === "admin" || (currentStaffName && currentStaffName.toLowerCase().includes("admin"))
+    currentRole === "admin" || (typeof currentStaffName === "string" && currentStaffName.toLowerCase().includes("admin"))
       ? "todos"
       : (currentStaffName || "todos")
   );
@@ -117,7 +117,8 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
 
     // Sanitizar y liberar cualquier tarea asignada antiguamente a usuarios administradores
     for (const lt of list) {
-      if (lt.assignedTo && (lt.assignedTo.toLowerCase().includes("admin") || lt.assignedTo.toLowerCase().includes("camilo"))) {
+      const assigned = (lt.assignedTo || "").toLowerCase();
+      if (assigned && (assigned.includes("admin") || assigned.includes("camilo"))) {
         lt.assignedTo = undefined;
         lt.assignedRole = undefined;
         if (lt.id) {
@@ -139,13 +140,16 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
       try {
         const connected = await getConnectedStaff();
         // Filtrar administradores para no mostrarlos en la cuadrícula de personal de campo
-        const fieldConnected = connected.filter(
-          (c) =>
+        const fieldConnected = (connected || []).filter((c) => {
+          if (!c) return false;
+          const cName = (c.staff_name || "").toLowerCase();
+          return (
             c.role !== "admin" &&
             c.staff_id !== MASTER_ADMIN.id &&
-            !c.staff_name.toLowerCase().includes("admin") &&
-            !c.staff_name.toLowerCase().includes("camilo")
-        );
+            !cName.includes("admin") &&
+            !cName.includes("camilo")
+          );
+        });
         setConnectedStaff(fieldConnected);
       } catch (err) {
         console.warn("Connected staff fetch error:", err);
@@ -276,10 +280,12 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
   const filteredTasks = tasks.filter((t) => {
     const matchShift = activeShift === "todos" || t.shift === activeShift;
     const matchLabor = activeLabor === "todas" || t.laborType === activeLabor;
+    const assignedNorm = (t.assignedTo || "").toLowerCase();
+    const completedNorm = (t.completedBy || "").toLowerCase();
     const matchStaff =
       filterNorm === "todos" ||
-      (Boolean(t.assignedTo) && t.assignedTo!.toLowerCase().includes(filterNorm)) ||
-      (Boolean(t.completedBy) && t.completedBy!.toLowerCase().includes(filterNorm));
+      (assignedNorm !== "" && assignedNorm.includes(filterNorm)) ||
+      (completedNorm !== "" && completedNorm.includes(filterNorm));
 
     return matchShift && matchLabor && matchStaff;
   });
@@ -412,11 +418,11 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
               {connectedStaff.map((st) => {
                 if (!st || !st.staff_name) return null;
                 const sName = (st.staff_name || "").toLowerCase();
-                const workerTasks = tasks.filter(
-                  (t) =>
-                    (Boolean(t.assignedTo) && t.assignedTo!.toLowerCase().includes(sName)) ||
-                    (Boolean(t.completedBy) && t.completedBy!.toLowerCase().includes(sName))
-                );
+                const workerTasks = tasks.filter((t) => {
+                  const aTo = (t.assignedTo || "").toLowerCase();
+                  const cBy = (t.completedBy || "").toLowerCase();
+                  return (aTo !== "" && aTo.includes(sName)) || (cBy !== "" && cBy.includes(sName));
+                });
                 const workerDone = workerTasks.filter((t) => t.isCompleted).length;
                 const isSelected = (staffFilter || "").toLowerCase() === sName;
 
@@ -477,17 +483,19 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-1">
               {staffList.map((st) => {
-                const sName = st.name.toLowerCase();
+                if (!st || !st.name) return null;
+                const sName = (st.name || "").toLowerCase();
                 const isOnline = connectedStaff.some(
                   (c) =>
-                    c.staff_id === st.id ||
-                    (c.staff_name && c.staff_name.toLowerCase() === sName)
+                    Boolean(c) &&
+                    (c.staff_id === st.id ||
+                    ((c.staff_name || "").toLowerCase() === sName))
                 );
-                const workerTasks = tasks.filter(
-                  (t) =>
-                    (Boolean(t.assignedTo) && t.assignedTo!.toLowerCase().includes(sName)) ||
-                    (Boolean(t.completedBy) && t.completedBy!.toLowerCase().includes(sName))
-                );
+                const workerTasks = tasks.filter((t) => {
+                  const aTo = (t.assignedTo || "").toLowerCase();
+                  const cBy = (t.completedBy || "").toLowerCase();
+                  return (aTo !== "" && aTo.includes(sName)) || (cBy !== "" && cBy.includes(sName));
+                });
                 const workerDone = workerTasks.filter((t) => t.isCompleted).length;
                 const isSelected = (staffFilter || "").toLowerCase() === sName;
 

@@ -413,7 +413,8 @@ export function isVetOrAdmin(role?: string): boolean {
 }
 
 export function canEditAnimals(role?: string): boolean {
-  return isVetOrAdmin(role);
+  // Todo el personal operativo del albergue (veterinarios, auxiliares, operarios y admin) puede actualizar y reubicar animales
+  return true;
 }
 
 export function canDeleteRecords(role?: string): boolean {

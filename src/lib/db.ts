@@ -736,8 +736,11 @@ export async function searchAnimalSmart(query: string): Promise<Animal | null> {
     .first();
 
   if (!animal && cat) {
+    const existingInAnimals = await db.animals.where("microchip").equals(cat.microchip).first();
+    const animId = existingInAnimals?.id;
+
     animal = {
-      id: cat.id,
+      id: animId,
       microchip: cat.microchip,
       shortChip: cat.shortChip,
       name: cat.color ? `FELINO ${cat.color}` : (cat.nombre || "FELINO"),
@@ -755,6 +758,13 @@ export async function searchAnimalSmart(query: string): Promise<Animal | null> {
       estadoSalud: cat.estadoSalud,
       medicoVeterinario: cat.medicoVeterinario,
     };
+
+    if (!animId) {
+      try {
+        const newId = await db.animals.add(animal);
+        animal.id = newId;
+      } catch {}
+    }
   }
 
   // Si se encontró el animal pero no tiene foto, verificar si gateraRecords sí la tiene

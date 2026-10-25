@@ -521,25 +521,41 @@ export async function syncAnimalToSupabase(
       animal.location?.toUpperCase().trim() === "FALLECIDO" ||
       animal.status?.toLowerCase().trim() === "fallecido";
 
-    // Preservar la fotografía existente en Supabase si el animal entrante no la incluye explícitamente y no se solicitó borrado
+    // Preservar la fotografía y microchip exacto existente en Supabase si el animal entrante no la incluye explícitamente y no se solicitó borrado
     let resolvedPhoto = animal.photoUrl || null;
-    if (!resolvedPhoto && !animal.deletePhoto) {
-      try {
-        const { data: remoteExisting } = await client
+    let targetMicrochip = animal.microchip;
+
+    try {
+      let { data: remoteExisting } = await client
+        .from("animals")
+        .select("microchip, photo_url, attributes")
+        .eq("microchip", animal.microchip)
+        .maybeSingle();
+
+      if (!remoteExisting && animal.microchip.length > 7) {
+        const last7 = animal.microchip.slice(-7);
+        const { data: suffixMatch } = await client
           .from("animals")
-          .select("photo_url, attributes")
-          .eq("microchip", animal.microchip)
+          .select("microchip, photo_url, attributes")
+          .ilike("microchip", `%${last7}`)
           .maybeSingle();
-        if (remoteExisting?.photo_url) {
-          resolvedPhoto = remoteExisting.photo_url;
-        } else if (remoteExisting?.attributes?.photoUrl) {
-          resolvedPhoto = remoteExisting.attributes.photoUrl;
+        if (suffixMatch) remoteExisting = suffixMatch;
+      }
+
+      if (remoteExisting) {
+        targetMicrochip = remoteExisting.microchip || animal.microchip;
+        if (!resolvedPhoto && !animal.deletePhoto) {
+          if (remoteExisting.photo_url) {
+            resolvedPhoto = remoteExisting.photo_url;
+          } else if (remoteExisting.attributes?.photoUrl) {
+            resolvedPhoto = remoteExisting.attributes.photoUrl;
+          }
         }
-      } catch {}
-    }
+      }
+    } catch {}
 
     const payload = {
-      microchip: animal.microchip,
+      microchip: targetMicrochip,
       name: animal.name,
       species: "gato",
       breed: animal.breed || "DPC",

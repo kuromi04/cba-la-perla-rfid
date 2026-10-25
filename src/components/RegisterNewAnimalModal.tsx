@@ -99,9 +99,50 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
     if (initialMicrochip) setMicrochip(initialMicrochip.trim());
 
     searchAnimalSmart(chipToSearch).then(async (found) => {
-      if (found?.photoUrl) {
-        setPhotoUrl(found.photoUrl);
-      } else if (typeof window !== "undefined" && navigator.onLine) {
+      if (found) {
+        if (found.name && found.name !== "S/N") setName(found.name);
+        if (found.location) setLocation(found.location);
+        if (found.color) setColor(found.color);
+        if (found.breed) setRaza(found.breed);
+        if (found.hc) setHc(found.hc);
+        if (found.sexoCode) setSexoCode(found.sexoCode as any);
+        if (found.condicionCorporal) setCondicionCorporal(found.condicionCorporal);
+        if (found.estadoSalud) setEstadoSalud(found.estadoSalud as any);
+        if (found.vifStatus) setVifStatus(found.vifStatus as any);
+        if (found.felvStatus) setFelvStatus(found.felvStatus as any);
+        if (found.observacionesMedicas || found.notes) {
+          setObservacionesMedicas(found.observacionesMedicas || found.notes || "");
+        }
+        if (found.isFeral !== undefined) setIsFeral(found.isFeral);
+        if (found.tipoIngreso) setTipoIngreso(found.tipoIngreso);
+        if (found.photoUrl) setPhotoUrl(found.photoUrl);
+      }
+
+      // Buscar datos adicionales en gateraRecords (medicación, pendientes, etc.)
+      const last7 = chipToSearch.slice(-7);
+      const catRec =
+        (await db.gateraRecords.where("microchip").equals(chipToSearch).first()) ||
+        (await db.gateraRecords.where("shortChip").equals(chipToSearch).first()) ||
+        (await db.gateraRecords.filter((g) => g.microchip.endsWith(last7) || chipToSearch.endsWith(g.microchip)).first());
+
+      if (catRec) {
+        if (!found?.name && catRec.nombre) setName(catRec.nombre);
+        if (!found?.location && catRec.ubicacion) setLocation(catRec.ubicacion);
+        if (!found?.color && catRec.color) setColor(catRec.color);
+        if (!found?.breed && catRec.raza) setRaza(catRec.raza);
+        if (!found?.hc && catRec.hc) setHc(catRec.hc);
+        if (catRec.medicacion && catRec.medicacion !== "Ninguno") {
+          setHasTreatment(true);
+          setMedicacion(catRec.medicacion);
+        }
+        if (catRec.sistema) setSistema(catRec.sistema);
+        if (catRec.edad) setEdadMeses(catRec.edad);
+        if (catRec.fechaIngreso) setFechaIngreso(catRec.fechaIngreso);
+        if (!found?.photoUrl && catRec.photoUrl) setPhotoUrl(catRec.photoUrl);
+      }
+
+      // Si no tiene foto local, buscar en Supabase
+      if (!found?.photoUrl && !catRec?.photoUrl && typeof window !== "undefined" && navigator.onLine) {
         try {
           const { getSupabaseClient } = await import("@/lib/supabase");
           const client = getSupabaseClient();
@@ -175,31 +216,23 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
       scrollToTop();
       return;
     }
-    const isAuthorized = currentUser ? canEditAnimals(currentUser.role) : false;
+    const last7 = cleanChip.slice(-7);
+    const shortChip = cleanChip.length > 7 ? cleanChip.slice(-7) : cleanChip;
 
-    // REGLA DE ORO: Si el animal ya existe, SOLO médicos y admin pueden editarlo o cambiar sus datos
-    const existingAnimal = await db.animals.where("microchip").equals(cleanChip).first();
-    if (existingAnimal && !isAuthorized) {
-      setErrorMessage(
-        `⛔ Regla de Oro: El microchip ${cleanChip} ya está registrado en el sistema a nombre de ${existingAnimal.name || "S/N"} (${existingAnimal.location}). Solo Médicos Veterinarios y Administradores pueden modificar animales existentes.`
-      );
-      scrollToTop();
-      return;
-    }
+    // Buscar si el animal ya existe usando concordancia inteligente (15 dígitos, 11 dígitos, sufijo o shortChip)
+    const existingAnimal =
+      (await db.animals.where("microchip").equals(cleanChip).first()) ||
+      (await db.animals.where("shortChip").equals(cleanChip).first()) ||
+      (await db.animals.filter((a) => a.microchip.endsWith(last7) || cleanChip.endsWith(a.microchip)).first());
 
-    // REGLA DE ORO: Solo médicos y admin pueden prescribir medicaciones
-    if (hasTreatment && medicacion.trim() && !isAuthorized) {
-      setErrorMessage(
-        `⛔ Regla de Oro: Solo Médicos Veterinarios y Administradores tienen autorización para prescribir tratamientos y medicaciones.`
-      );
-      scrollToTop();
-      return;
-    }
+    const existingGatera =
+      (await db.gateraRecords.where("microchip").equals(cleanChip).first()) ||
+      (await db.gateraRecords.where("shortChip").equals(cleanChip).first()) ||
+      (await db.gateraRecords.filter((g) => g.microchip.endsWith(last7) || cleanChip.endsWith(g.microchip)).first());
 
     setIsSubmitting(true);
 
     try {
-      const shortChip = cleanChip.length > 7 ? cleanChip.slice(-7) : cleanChip;
       const formattedName = name.trim() ? name.trim().toUpperCase() : "S/N";
       const formattedLocation = location.trim().toUpperCase();
       const formattedRaza = raza.trim().toUpperCase() || "DPC";
@@ -241,8 +274,6 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
         .filter(Boolean)
         .join(" | ");
 
-      // 1. Verificar registros existentes en ambas tablas para preservar fotos y metadatos
-      const existingGatera = await db.gateraRecords.where("microchip").equals(cleanChip).first();
       const resolvedPhoto = photoUrl || existingAnimal?.photoUrl || existingGatera?.photoUrl || undefined;
 
       // Guardar o Actualizar en tabla central: db.animals
@@ -476,6 +507,10 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
           : `Nuevo ingreso felino registrado en ${formattedLocation} (${formattedColor}) por ${currentUser?.name || "Personal"}`,
         user: currentUser,
       });
+
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("cba_sync_update", { detail: { chip: cleanChip } }));
+      }
 
       onAnimalRegistered(finalAnimal);
       onClose();

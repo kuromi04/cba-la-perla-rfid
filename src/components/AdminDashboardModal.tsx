@@ -23,6 +23,7 @@ import { isSupabaseConfigured, syncAnimalToSupabase, deleteAnimalFromSupabase } 
 import { computeEdaAnalysis, exportEdaExcelReport, EdaSummary } from "@/lib/edaAnalysis";
 import { OFFICIAL_GATERA_LOCATIONS, getAllGateraLocations } from "@/lib/gateraLocations";
 import { OFFICIAL_GATERA_COLORS } from "@/lib/gateraColors";
+import { GateraCat } from "@/lib/gateraData";
 import {
   ShieldAlert,
   Users,
@@ -283,9 +284,15 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     setLoading(true);
     try {
       const chip = editingAnimal.microchip.trim().toUpperCase();
+      const last7 = chip.slice(-7);
       const nowIso = new Date().toISOString();
 
-      const catRec = await db.gateraRecords.where("microchip").equals(chip).first();
+      let catRec = await db.gateraRecords.where("microchip").equals(chip).first();
+      if (!catRec) {
+        catRec =
+          (await db.gateraRecords.where("shortChip").equals(chip).first()) ||
+          (await db.gateraRecords.filter((g) => g.microchip.endsWith(last7) || chip.endsWith(g.microchip)).first());
+      }
       const resolvedPhoto = editingAnimal.photoUrl || catRec?.photoUrl || undefined;
 
       const updatedData: Animal = {
@@ -300,7 +307,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
       await db.animals.update(editingAnimal.id, updatedData);
 
-      // Actualizar en db.gateraRecords
+      // Actualizar o crear en db.gateraRecords
       if (catRec && catRec.id) {
         await db.gateraRecords.update(catRec.id, {
           ubicacion: updatedData.location,
@@ -313,7 +320,50 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
           observacionesMedicas: updatedData.observacionesMedicas || "",
           medicoVeterinario: updatedData.medicoVeterinario || "",
           photoUrl: resolvedPhoto,
+          updatedBy: "Administrador Maestro",
+          updatedById: MASTER_ADMIN.id,
+          updatedAt: nowIso,
         });
+      } else {
+        const newGateraCat: GateraCat = {
+          ubicacion: updatedData.location,
+          microchip: chip,
+          shortChip: last7,
+          nombre: updatedData.name,
+          descripcion: `${updatedData.name} (${updatedData.breed || "DPC"} - ${updatedData.color || "COMÚN"})`,
+          medicacion: updatedData.notes || "Ninguno",
+          pendientes: updatedData.observacionesMedicas || "",
+          color: updatedData.color || "COMÚN",
+          raza: updatedData.breed || "DPC",
+          sexo: updatedData.gender === "hembra" ? "hembra" : "macho",
+          sexoCode: updatedData.sexoCode || "MFA",
+          grupoEdad: (updatedData.sexoCode || "").endsWith("C") ? "cachorro" : "adulto",
+          hc: updatedData.hc || last7.slice(-5),
+          isFeral: updatedData.isFeral || false,
+          tipoIngreso: updatedData.tipoIngreso || "RES",
+          edad: updatedData.edad || "24 MESES",
+          fechaIngreso: updatedData.fechaIngreso || nowIso.split("T")[0],
+          condicionCorporal: updatedData.condicionCorporal || "RANGO 3.0/5",
+          estadoSalud: updatedData.estadoSalud || "Saludable",
+          observacionesMedicas: updatedData.observacionesMedicas || "",
+          requiereSeguimiento: updatedData.requiereSeguimiento || "NO",
+          tipoSeguimiento: updatedData.tipoSeguimiento || "NO REQUIERE",
+          medicoVeterinario: updatedData.medicoVeterinario || "",
+          photoUrl: resolvedPhoto,
+          status: updatedData.status || "activo",
+          sistema: "PREVENTIVO",
+          fechaFinal: "HNI",
+          tipo: "FS",
+          desparasitante: "AL DÍA (FELINO)",
+          updatedBy: "Administrador Maestro",
+          updatedById: MASTER_ADMIN.id,
+          updatedAt: nowIso,
+        };
+        await db.gateraRecords.add(newGateraCat);
+      }
+
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("cba_sync_update", { detail: { chip } }));
       }
 
       await recordAudit({
@@ -868,12 +918,13 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
   // Filtros de Auditoría
   const filteredLogs = auditLogs.filter((log) => {
+    const qAudit = (searchAuditQuery || "").toLowerCase();
     const matchSearch =
-      searchAuditQuery === "" ||
-      log.microchip.toLowerCase().includes(searchAuditQuery.toLowerCase()) ||
-      log.userName.toLowerCase().includes(searchAuditQuery.toLowerCase()) ||
-      log.details.toLowerCase().includes(searchAuditQuery.toLowerCase()) ||
-      (log.animalName && log.animalName.toLowerCase().includes(searchAuditQuery.toLowerCase()));
+      qAudit === "" ||
+      (log.microchip && log.microchip.toLowerCase().includes(qAudit)) ||
+      (log.userName && log.userName.toLowerCase().includes(qAudit)) ||
+      (log.details && log.details.toLowerCase().includes(qAudit)) ||
+      (log.animalName && log.animalName.toLowerCase().includes(qAudit));
 
     const matchAction = filterAction === "TODAS" || log.action === filterAction;
     const matchUser = filterUser === "TODOS" || log.userId === filterUser || log.userName === filterUser;
@@ -2241,13 +2292,14 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                         );
                       }
 
+                      const qChip = (chipSearchInUser || "").toLowerCase();
                       const filteredChips = (u.registeredChips || []).filter((chip) =>
-                        chip.toLowerCase().includes(chipSearchInUser.toLowerCase())
+                        (chip || "").toLowerCase().includes(qChip)
                       );
 
                       // Filtrar logs de este usuario específico
                       const userLogs = auditLogs.filter(
-                        (l) => l.userId === u.userId || l.userName.toLowerCase() === u.userName.toLowerCase()
+                        (l) => l.userId === u.userId || (l.userName || "").toLowerCase() === (u.userName || "").toLowerCase()
                       );
 
                       return (

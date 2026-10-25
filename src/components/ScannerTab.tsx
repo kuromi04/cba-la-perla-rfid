@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
 import { Animal, KardexRecord, db, searchAnimalSmart } from "@/lib/db";
 import { ShelterRecord } from "@/lib/realData";
+import { GateraCat } from "@/lib/gateraData";
 import {
   Scan,
   CheckCircle2,
@@ -397,11 +398,6 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
 
   const handleSaveColor = async (newColorRaw?: string) => {
     if (!currentAnimal) return;
-    const isVetOrAdmin = currentUser?.role === "veterinario" || currentUser?.role === "admin";
-    if (!isVetOrAdmin) {
-      setFeedbackMessage("⛔ Regla de Oro: Solo Médicos Veterinarios y Administradores tienen autorización para modificar el color oficial.");
-      return;
-    }
 
     const selectedColor = (newColorRaw !== undefined ? newColorRaw : editColor).trim().toUpperCase();
     if (!selectedColor) {
@@ -410,12 +406,21 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
     }
 
     const cleanChip = currentAnimal.microchip.trim().toUpperCase();
+    const last7 = cleanChip.slice(-7);
     const newName = `FELINO ${selectedColor}`;
     const nowIso = new Date().toISOString();
 
-    // 1. Actualizar en db.animals
-    if (currentAnimal.id) {
-      await db.animals.update(currentAnimal.id, {
+    // 1. Actualizar o insertar en db.animals
+    let anim = currentAnimal.id ? await db.animals.get(currentAnimal.id) : null;
+    if (!anim) {
+      anim =
+        (await db.animals.where("microchip").equals(cleanChip).first()) ||
+        (await db.animals.where("shortChip").equals(cleanChip).first()) ||
+        (await db.animals.filter((a) => a.microchip.endsWith(last7) || cleanChip.endsWith(a.microchip)).first());
+    }
+
+    if (anim?.id) {
+      await db.animals.update(anim.id, {
         color: selectedColor,
         name: newName,
         updatedBy: currentUser?.name || "Personal CBA La Perla",
@@ -423,20 +428,27 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
         updatedAt: nowIso,
       });
     } else {
-      const anim = await db.animals.where("microchip").equals(cleanChip).first();
-      if (anim?.id) {
-        await db.animals.update(anim.id, {
-          color: selectedColor,
-          name: newName,
-          updatedBy: currentUser?.name || "Personal CBA La Perla",
-          updatedById: currentUser?.id || "anon_user",
-          updatedAt: nowIso,
-        });
-      }
+      await db.animals.add({
+        ...currentAnimal,
+        microchip: cleanChip,
+        color: selectedColor,
+        name: newName,
+        species: currentAnimal.species || "gato",
+        breed: currentAnimal.breed || "DPC",
+        updatedBy: currentUser?.name || "Personal CBA La Perla",
+        updatedById: currentUser?.id || "anon_user",
+        updatedAt: nowIso,
+      });
     }
 
-    // 2. Actualizar en db.gateraRecords
-    const catRecord = await db.gateraRecords.where("microchip").equals(cleanChip).first();
+    // 2. Actualizar o insertar en db.gateraRecords
+    let catRecord = await db.gateraRecords.where("microchip").equals(cleanChip).first();
+    if (!catRecord) {
+      catRecord =
+        (await db.gateraRecords.where("shortChip").equals(cleanChip).first()) ||
+        (await db.gateraRecords.filter((g) => g.microchip.endsWith(last7) || cleanChip.endsWith(g.microchip)).first());
+    }
+
     if (catRecord?.id) {
       await db.gateraRecords.update(catRecord.id, {
         color: selectedColor,
@@ -446,6 +458,41 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
         updatedById: currentUser?.id || "anon_user",
         updatedAt: nowIso,
       });
+    } else if (currentAnimal.species === "gato") {
+      const gEntry: GateraCat = {
+        ubicacion: currentAnimal.location || "GATERA",
+        microchip: cleanChip,
+        shortChip: last7,
+        nombre: newName,
+        descripcion: `${newName} (DPC - ${selectedColor})`,
+        medicacion: "Ninguno",
+        pendientes: "",
+        color: selectedColor,
+        raza: currentAnimal.breed || "DPC",
+        sexo: currentAnimal.gender === "hembra" ? "hembra" : "macho",
+        sexoCode: currentAnimal.sexoCode || "MFA",
+        grupoEdad: "adulto",
+        hc: currentAnimal.hc || last7.slice(-5),
+        isFeral: currentAnimal.isFeral || false,
+        tipoIngreso: currentAnimal.tipoIngreso || "RES",
+        edad: currentAnimal.edad || "24 MESES",
+        fechaIngreso: nowIso.split("T")[0],
+        condicionCorporal: currentAnimal.condicionCorporal || "RANGO 3.0/5",
+        estadoSalud: currentAnimal.estadoSalud || "Saludable",
+        observacionesMedicas: currentAnimal.observacionesMedicas || "",
+        requiereSeguimiento: "NO",
+        tipoSeguimiento: "NO REQUIERE",
+        medicoVeterinario: currentAnimal.medicoVeterinario || "",
+        status: "activo",
+        sistema: "PREVENTIVO",
+        fechaFinal: "HNI",
+        tipo: "FS",
+        desparasitante: "AL DÍA (FELINO)",
+        updatedBy: currentUser?.name || "Personal CBA La Perla",
+        updatedById: currentUser?.id || "anon_user",
+        updatedAt: nowIso,
+      };
+      await db.gateraRecords.add(gEntry);
     }
 
     // 3. Actualizar en db.census
@@ -664,13 +711,8 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
   const handleSaveQuickEdit = async () => {
     if (!currentAnimal) return;
 
-    const isVetOrAdmin = currentUser?.role === "veterinario" || currentUser?.role === "admin";
-    if (!isVetOrAdmin) {
-      setFeedbackMessage("⛔ Regla de Oro: Solo Médicos Veterinarios y Administradores tienen autorización para modificar o reubicar animales.");
-      return;
-    }
-
-    const cleanChip = currentAnimal.microchip.trim();
+    const cleanChip = currentAnimal.microchip.trim().toUpperCase();
+    const last7 = cleanChip.slice(-7);
     const isFallecido = editLocation.toUpperCase().trim() === "FALLECIDO";
     const nowIso = new Date().toISOString();
     const previousLoc = currentAnimal.location || "GATERA";
@@ -693,14 +735,28 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
       animalUpdatePayload.name = `FELINO ${selectedColor}`;
     }
 
-    if (currentAnimal.id) {
-      await db.animals.update(currentAnimal.id, animalUpdatePayload);
-    } else {
-      const anim = await db.animals.where("microchip").equals(cleanChip).first();
-      if (anim && anim.id) {
-        await db.animals.update(anim.id, animalUpdatePayload);
-      }
+    // 1. Buscar y actualizar de forma tolerante en db.animals
+    let anim = currentAnimal.id ? await db.animals.get(currentAnimal.id) : null;
+    if (!anim) {
+      anim =
+        (await db.animals.where("microchip").equals(cleanChip).first()) ||
+        (await db.animals.where("shortChip").equals(cleanChip).first()) ||
+        (await db.animals.filter((a) => a.microchip.endsWith(last7) || cleanChip.endsWith(a.microchip)).first());
     }
+
+    if (anim && anim.id) {
+      await db.animals.update(anim.id, animalUpdatePayload);
+    } else {
+      await db.animals.add({
+        ...currentAnimal,
+        ...animalUpdatePayload,
+        microchip: cleanChip,
+        species: currentAnimal.species || "gato",
+        breed: currentAnimal.breed || "DPC",
+        name: (selectedColor && currentAnimal.species === "gato") ? `FELINO ${selectedColor}` : currentAnimal.name,
+      });
+    }
+
     setCurrentAnimal({
       ...currentAnimal,
       location: editLocation,
@@ -741,8 +797,14 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
     }
 
     if (currentAnimal.species === "gato") {
-      // Actualizar en db.gateraRecords
-      const catRecord = await db.gateraRecords.where("microchip").equals(cleanChip).first();
+      // 2. Buscar y actualizar de forma tolerante en db.gateraRecords
+      let catRecord = await db.gateraRecords.where("microchip").equals(cleanChip).first();
+      if (!catRecord) {
+        catRecord =
+          (await db.gateraRecords.where("shortChip").equals(cleanChip).first()) ||
+          (await db.gateraRecords.filter((g) => g.microchip.endsWith(last7) || cleanChip.endsWith(g.microchip)).first());
+      }
+
       if (catRecord && catRecord.id) {
         await db.gateraRecords.update(catRecord.id, {
           ubicacion: editLocation,
@@ -759,7 +821,43 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
           updatedById: currentUser?.id || "anon_user",
           updatedAt: nowIso,
         });
+      } else {
+        const gEntry: GateraCat = {
+          ubicacion: editLocation,
+          microchip: cleanChip,
+          shortChip: last7,
+          nombre: selectedColor ? `FELINO ${selectedColor}` : currentAnimal.name,
+          descripcion: selectedColor ? `FELINO ${selectedColor} (${currentAnimal.breed || "DPC"} - ${selectedColor})` : currentAnimal.name,
+          medicacion: editMedication || "Ninguno",
+          pendientes: editPendientes || "",
+          color: selectedColor || currentAnimal.color || "COMÚN",
+          raza: currentAnimal.breed || "DPC",
+          sexo: currentAnimal.gender === "hembra" ? "hembra" : "macho",
+          sexoCode: currentAnimal.sexoCode || "MFA",
+          grupoEdad: "adulto",
+          hc: currentAnimal.hc || last7.slice(-5),
+          isFeral: currentAnimal.isFeral || false,
+          tipoIngreso: currentAnimal.tipoIngreso || "RES",
+          edad: currentAnimal.edad || "24 MESES",
+          fechaIngreso: nowIso.split("T")[0],
+          condicionCorporal: currentAnimal.condicionCorporal || "RANGO 3.0/5",
+          estadoSalud: currentAnimal.estadoSalud || "Saludable",
+          observacionesMedicas: currentAnimal.observacionesMedicas || "",
+          requiereSeguimiento: "NO",
+          tipoSeguimiento: "NO REQUIERE",
+          medicoVeterinario: currentAnimal.medicoVeterinario || "",
+          status: isFallecido ? "fallecido" : "activo",
+          sistema: "PREVENTIVO",
+          fechaFinal: "HNI",
+          tipo: "FS",
+          desparasitante: "AL DÍA (FELINO)",
+          updatedBy: currentUser?.name || "Personal CBA La Perla",
+          updatedById: currentUser?.id || "anon_user",
+          updatedAt: nowIso,
+        };
+        await db.gateraRecords.add(gEntry);
       }
+
       setShelterEntries([
         {
           ubicacion: editLocation,
@@ -815,6 +913,7 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
         const { syncAnimalToSupabase } = await import("@/lib/supabase");
         syncAnimalToSupabase({
           ...currentAnimal,
+          microchip: cleanChip,
           location: editLocation,
           status: isFallecido ? "fallecido" : "activo",
           color: selectedColor || currentAnimal.color,
@@ -824,6 +923,11 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
           updatedAt: nowIso,
         }).catch(console.warn);
       } catch {}
+    }
+
+    // Emitir evento global de sincronización para que el resto de pestañas actualicen su vista
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("cba_sync_update", { detail: { chip: cleanChip } }));
     }
 
     setIsEditing(false);
@@ -1289,7 +1393,7 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
                       <span className="text-xs font-black text-purple-900 bg-purple-100 border border-purple-200 px-2 py-0.5 rounded-lg inline-flex items-center gap-1 shadow-xs">
                         🎨 Color Oficial (Col. H): {currentAnimal.color || "DPC"}
                       </span>
-                      {(currentUser?.role === "veterinario" || currentUser?.role === "admin") && !isEditingColor && (
+                      {Boolean(currentUser) && !isEditingColor && (
                         <button
                           type="button"
                           onClick={() => {
@@ -1505,7 +1609,7 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
                   <MapPin className="w-3 h-3" /> UBICACIÓN
                 </span>
                 <span className="text-sm sm:text-base font-black text-indigo-900 text-center">{currentAnimal.location}</span>
-                {(currentUser?.role === "veterinario" || currentUser?.role === "admin") && !isEditing && (
+                {Boolean(currentUser) && !isEditing && (
                   <button
                     type="button"
                     onClick={() => setIsEditing(true)}
@@ -1797,7 +1901,7 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
           </div>
 
           {/* Modo de Edición Rápida en Campo (EXCLUSIVO MÉDICOS VETERINARIOS Y ADMIN) */}
-          {(currentUser?.role === "veterinario" || currentUser?.role === "admin") && (
+          {Boolean(currentUser) && (
             isEditing ? (
               <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl space-y-3 text-xs animate-in fade-in">
                 <h4 className="font-bold text-amber-900 uppercase">Modificar Datos de este Animal (Vet/Admin)</h4>
