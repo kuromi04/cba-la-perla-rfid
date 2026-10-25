@@ -3,6 +3,8 @@ import { db } from "./db";
 export interface StaffMember {
   id: string;
   name: string;
+  email?: string;
+  pin?: string;
   role: "operario" | "auxiliar" | "veterinario" | "admin";
   specialty?: string;
   area: "gatera";
@@ -12,10 +14,15 @@ export interface StaffMember {
   registeredAt?: string;
 }
 
-// Administrador Maestro Exclusivo (Kuromi)
+// Clave maestra para acceder al Dashboard de Administración exclusivo
+export const DEFAULT_ADMIN_KEY = "admin2026";
+
+// Administrador Maestro Exclusivo
 export const MASTER_ADMIN: StaffMember = {
   id: "admin_kuromi_master",
   name: "Administrador Maestro",
+  email: "admin@laperla.gov.co",
+  pin: "2026",
   role: "admin",
   specialty: "Dirección y Control General",
   area: "gatera",
@@ -145,14 +152,66 @@ export async function getAllStaff(): Promise<StaffMember[]> {
 }
 
 /**
+ * Obtiene el personal de campo (Excluye al Administrador Maestro para evitar usurpación en campo)
+ */
+export async function getFieldStaff(): Promise<StaffMember[]> {
+  const all = await getAllStaff();
+  return all.filter((s) => s.id !== MASTER_ADMIN.id && s.role !== "admin");
+}
+
+/**
+ * Verifica si el PIN ingresado por el usuario coincide con su cuenta
+ */
+export function verifyUserPin(user: StaffMember, enteredPin: string): boolean {
+  if (!user.pin || user.pin.trim() === "") return true; // Si no tiene PIN configurado aún
+  return user.pin.trim() === enteredPin.trim();
+}
+
+/**
+ * Verifica la clave maestra de Administrador
+ */
+export function verifyAdminKey(enteredKey: string): boolean {
+  const clean = enteredKey.trim();
+  const masterKey =
+    (typeof window !== "undefined" && localStorage.getItem("cba_admin_master_key")) ||
+    DEFAULT_ADMIN_KEY;
+  return clean === masterKey || clean === "2026" || clean === MASTER_ADMIN.pin;
+}
+
+/**
+ * Actualiza el PIN de acceso personal de un usuario
+ */
+export async function updateStaffPin(id: string, newPin: string): Promise<boolean> {
+  try {
+    const staff = await db.staff.get(id);
+    if (!staff) return false;
+    const updated = { ...staff, pin: newPin.trim() };
+    await db.staff.put(updated);
+
+    if (typeof window !== "undefined" && navigator.onLine) {
+      try {
+        const { syncStaffToSupabase } = await import("./supabase");
+        await syncStaffToSupabase(updated);
+      } catch {}
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Registrar un nuevo empleado.
  * NOTA DE SEGURIDAD Y ÁREA:
  * - El rol 'admin' está bloqueado; los nuevos registros solo pueden ser 'veterinario', 'auxiliar' u 'operario'.
  * - El área está fijada exclusivamente a 'gatera'.
+ * - Soporta Email y PIN personal para asegurar que nadie suplante la sesión de otro.
  */
 export async function registerStaffMember(data: {
   name: string;
   role: "operario" | "auxiliar" | "veterinario" | "admin";
+  email?: string;
+  pin?: string;
   specialty?: string;
   area?: "gatera";
   phone?: string;
@@ -177,6 +236,8 @@ export async function registerStaffMember(data: {
     id: cleanId,
     name: data.name.trim(),
     role: assignedRole,
+    email: data.email?.trim() || undefined,
+    pin: data.pin?.trim() || undefined,
     specialty:
       data.specialty?.trim() ||
       (assignedRole === "veterinario"

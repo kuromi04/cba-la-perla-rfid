@@ -40,6 +40,7 @@ import { ParsedClinicalIntent } from "@/lib/aiParser";
 import { StaffMember } from "@/lib/staff";
 import { OFFICIAL_GATERA_LOCATIONS, getAllGateraLocations, isDeceased } from "@/lib/gateraLocations";
 import { OFFICIAL_GATERA_COLORS } from "@/lib/gateraColors";
+import { recordAudit } from "@/lib/audit";
 
 interface ScannerTabProps {
   initialChip?: string;
@@ -344,8 +345,22 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
     }
 
     if (currentAnimal.id) {
-      await db.animals.update(currentAnimal.id, { lastCensusDate: nowIso });
+      await db.animals.update(currentAnimal.id, {
+        lastCensusDate: nowIso,
+        updatedBy: currentUser?.name || "Personal CBA La Perla",
+        updatedById: currentUser?.id || "anon_user",
+        updatedAt: nowIso,
+      });
     }
+
+    recordAudit({
+      action: "CENSO_CONFIRMADO",
+      microchip: currentAnimal.microchip.trim(),
+      animalName: currentAnimal.name,
+      location: currentAnimal.location,
+      details: `Censo verificado y confirmado en ${currentAnimal.location} por ${currentUser?.name || "Personal"}`,
+      user: currentUser,
+    }).catch(console.warn);
 
     setCensusConfirmed(true);
     setFeedbackMessage(`✅ Censo registrado: ${currentAnimal.name} verificado en ${currentAnimal.location}`);
@@ -371,14 +386,27 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
 
     const cleanChip = currentAnimal.microchip.trim().toUpperCase();
     const newName = `FELINO ${selectedColor}`;
+    const nowIso = new Date().toISOString();
 
     // 1. Actualizar en db.animals
     if (currentAnimal.id) {
-      await db.animals.update(currentAnimal.id, { color: selectedColor, name: newName });
+      await db.animals.update(currentAnimal.id, {
+        color: selectedColor,
+        name: newName,
+        updatedBy: currentUser?.name || "Personal CBA La Perla",
+        updatedById: currentUser?.id || "anon_user",
+        updatedAt: nowIso,
+      });
     } else {
       const anim = await db.animals.where("microchip").equals(cleanChip).first();
       if (anim?.id) {
-        await db.animals.update(anim.id, { color: selectedColor, name: newName });
+        await db.animals.update(anim.id, {
+          color: selectedColor,
+          name: newName,
+          updatedBy: currentUser?.name || "Personal CBA La Perla",
+          updatedById: currentUser?.id || "anon_user",
+          updatedAt: nowIso,
+        });
       }
     }
 
@@ -389,6 +417,9 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
         color: selectedColor,
         nombre: newName,
         descripcion: `${newName} (${catRecord.raza || "DPC"} - ${selectedColor})`,
+        updatedBy: currentUser?.name || "Personal CBA La Perla",
+        updatedById: currentUser?.id || "anon_user",
+        updatedAt: nowIso,
       });
     }
 
@@ -409,10 +440,24 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
       ...currentAnimal,
       color: selectedColor,
       name: newName,
+      updatedBy: currentUser?.name || "Personal CBA La Perla",
+      updatedById: currentUser?.id || "anon_user",
+      updatedAt: nowIso,
     };
     setCurrentAnimal(updatedAnimal);
     setEditColor(selectedColor);
     setIsEditingColor(false);
+
+    recordAudit({
+      action: "CAMBIO_COLOR",
+      microchip: cleanChip,
+      animalName: currentAnimal.name,
+      location: currentAnimal.location,
+      previousValue: currentAnimal.color,
+      newValue: selectedColor,
+      details: `Color oficial cambiado de "${currentAnimal.color || "DPC"}" a "${selectedColor}" por ${currentUser?.name || "Personal"}`,
+      user: currentUser,
+    }).catch(console.warn);
 
     // 6. Sincronizar en segundo plano a Supabase
     if (typeof window !== "undefined" && navigator.onLine) {
@@ -434,24 +479,56 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
       const base64 = await compressImageFile(file, 800, 0.75);
       const cleanChip = currentAnimal.microchip.trim();
 
+      const nowIso = new Date().toISOString();
+
       // 1. Actualizar db.animals
       if (currentAnimal.id) {
-        await db.animals.update(currentAnimal.id, { photoUrl: base64 });
+        await db.animals.update(currentAnimal.id, {
+          photoUrl: base64,
+          updatedBy: currentUser?.name || "Personal CBA La Perla",
+          updatedById: currentUser?.id || "anon_user",
+          updatedAt: nowIso,
+        });
       } else {
         const anim = await db.animals.where("microchip").equals(cleanChip).first();
         if (anim?.id) {
-          await db.animals.update(anim.id, { photoUrl: base64 });
+          await db.animals.update(anim.id, {
+            photoUrl: base64,
+            updatedBy: currentUser?.name || "Personal CBA La Perla",
+            updatedById: currentUser?.id || "anon_user",
+            updatedAt: nowIso,
+          });
         }
       }
 
       // 2. Actualizar db.gateraRecords
       const catRec = await db.gateraRecords.where("microchip").equals(cleanChip).first();
       if (catRec && catRec.id) {
-        await db.gateraRecords.update(catRec.id, { photoUrl: base64 });
+        await db.gateraRecords.update(catRec.id, {
+          photoUrl: base64,
+          updatedBy: currentUser?.name || "Personal CBA La Perla",
+          updatedById: currentUser?.id || "anon_user",
+          updatedAt: nowIso,
+        });
       }
 
-      const updated = { ...currentAnimal, photoUrl: base64 };
+      const updated = {
+        ...currentAnimal,
+        photoUrl: base64,
+        updatedBy: currentUser?.name || "Personal CBA La Perla",
+        updatedById: currentUser?.id || "anon_user",
+        updatedAt: nowIso,
+      };
       setCurrentAnimal(updated);
+
+      recordAudit({
+        action: "FOTO_SUBIDA",
+        microchip: cleanChip,
+        animalName: currentAnimal.name,
+        location: currentAnimal.location,
+        details: `Fotografía del felino actualizada por ${currentUser?.name || "Personal"}`,
+        user: currentUser,
+      }).catch(console.warn);
 
       // 3. Sincronizar en Supabase
       if (typeof window !== "undefined" && navigator.onLine) {
@@ -480,25 +557,56 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
     setIsUploadingPhoto(true);
     try {
       const cleanChip = currentAnimal.microchip.trim();
+      const nowIso = new Date().toISOString();
 
       // 1. Actualizar db.animals
       if (currentAnimal.id) {
-        await db.animals.update(currentAnimal.id, { photoUrl: undefined });
+        await db.animals.update(currentAnimal.id, {
+          photoUrl: undefined,
+          updatedBy: currentUser?.name || "Personal CBA La Perla",
+          updatedById: currentUser?.id || "anon_user",
+          updatedAt: nowIso,
+        });
       } else {
         const anim = await db.animals.where("microchip").equals(cleanChip).first();
         if (anim?.id) {
-          await db.animals.update(anim.id, { photoUrl: undefined });
+          await db.animals.update(anim.id, {
+            photoUrl: undefined,
+            updatedBy: currentUser?.name || "Personal CBA La Perla",
+            updatedById: currentUser?.id || "anon_user",
+            updatedAt: nowIso,
+          });
         }
       }
 
       // 2. Actualizar db.gateraRecords
       const catRec = await db.gateraRecords.where("microchip").equals(cleanChip).first();
       if (catRec && catRec.id) {
-        await db.gateraRecords.update(catRec.id, { photoUrl: undefined });
+        await db.gateraRecords.update(catRec.id, {
+          photoUrl: undefined,
+          updatedBy: currentUser?.name || "Personal CBA La Perla",
+          updatedById: currentUser?.id || "anon_user",
+          updatedAt: nowIso,
+        });
       }
 
-      const updated = { ...currentAnimal, photoUrl: undefined };
+      const updated = {
+        ...currentAnimal,
+        photoUrl: undefined,
+        updatedBy: currentUser?.name || "Personal CBA La Perla",
+        updatedById: currentUser?.id || "anon_user",
+        updatedAt: nowIso,
+      };
       setCurrentAnimal(updated);
+
+      recordAudit({
+        action: "FOTO_ELIMINADA",
+        microchip: cleanChip,
+        animalName: currentAnimal.name,
+        location: currentAnimal.location,
+        details: `Fotografía eliminada por ${currentUser?.name || "Personal"}`,
+        user: currentUser,
+      }).catch(console.warn);
 
       // 3. Sincronizar en Supabase (elimina en la nube pasando null)
       if (typeof window !== "undefined" && navigator.onLine) {
@@ -541,6 +649,9 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
       fechaFallecimiento: isFallecido ? nowIso : undefined,
       causaFallecimiento: isFallecido ? (editPendientes || "Baja registrada en campo") : undefined,
       ubicacionPrevia: isFallecido ? previousLoc : undefined,
+      updatedBy: currentUser?.name || "Personal CBA La Perla",
+      updatedById: currentUser?.id || "anon_user",
+      updatedAt: nowIso,
     };
 
     if (selectedColor && currentAnimal.species === "gato") {
@@ -562,6 +673,9 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
       status: isFallecido ? "fallecido" : "activo",
       color: selectedColor || currentAnimal.color,
       name: (selectedColor && currentAnimal.species === "gato") ? `FELINO ${selectedColor}` : currentAnimal.name,
+      updatedBy: currentUser?.name || "Personal CBA La Perla",
+      updatedById: currentUser?.id || "anon_user",
+      updatedAt: nowIso,
     });
 
     if (isFallecido) {
@@ -607,6 +721,9 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
           color: selectedColor || catRecord.color,
           nombre: selectedColor ? `FELINO ${selectedColor}` : catRecord.nombre,
           descripcion: selectedColor ? `FELINO ${selectedColor} (${catRecord.raza || "DPC"} - ${selectedColor})` : catRecord.descripcion,
+          updatedBy: currentUser?.name || "Personal CBA La Perla",
+          updatedById: currentUser?.id || "anon_user",
+          updatedAt: nowIso,
         });
       }
       setShelterEntries([
@@ -645,6 +762,19 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
       }
     }
 
+    recordAudit({
+      action: isFallecido ? "BAJA_FALLECIDO" : "CAMBIO_UBICACION",
+      microchip: cleanChip,
+      animalName: currentAnimal.name,
+      location: editLocation,
+      previousValue: previousLoc,
+      newValue: editLocation,
+      details: isFallecido
+        ? `Felino registrado como FALLECIDO por ${currentUser?.name || "Personal"}`
+        : `Traslado a ${editLocation} (Color: ${selectedColor || currentAnimal.color || "DPC"}) por ${currentUser?.name || "Personal"}`,
+      user: currentUser,
+    }).catch(console.warn);
+
     // Sincronizar en Supabase si está disponible
     if (typeof window !== "undefined" && navigator.onLine) {
       try {
@@ -655,6 +785,9 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
           status: isFallecido ? "fallecido" : "activo",
           color: selectedColor || currentAnimal.color,
           name: (selectedColor && currentAnimal.species === "gato") ? `FELINO ${selectedColor}` : currentAnimal.name,
+          updatedBy: currentUser?.name || "Personal CBA La Perla",
+          updatedById: currentUser?.id || "anon_user",
+          updatedAt: nowIso,
         }).catch(console.warn);
       } catch {}
     }
@@ -854,6 +987,15 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
         tipo: rxFrequency,
       },
     ]);
+
+    recordAudit({
+      action: isEdit ? "TRATAMIENTO_EDITADO" : "TRATAMIENTO_PRESCRITO",
+      microchip: cleanChip,
+      animalName: currentAnimal.name,
+      location: currentAnimal.location,
+      details: `${isEdit ? "Edición" : "Instauración"} de tratamiento: ${rxMedication.trim()} (${rxSystem}, ${totalDoses} dosis) por Dr. ${prescriber}`,
+      user: currentUser,
+    }).catch(console.warn);
 
     setIsPrescribingTreatment(false);
     setEditingTreatmentId(null);
@@ -1229,6 +1371,25 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
                       ? "FeLV+ (Leucemia Felina)"
                       : "RETROVIRALES: NEGATIVO (VIF- / FeLV-)"}
                   </span>
+                </div>
+              )}
+
+              {/* Trazabilidad de Auditoría por Usuario */}
+              {(currentAnimal.createdBy || currentAnimal.updatedBy) && (
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-slate-500 font-medium bg-slate-50 p-2 rounded-xl border border-slate-100">
+                  {currentAnimal.createdBy && (
+                    <span className="flex items-center gap-1">
+                      📝 <strong className="text-slate-700">Registrado por:</strong> {currentAnimal.createdBy}
+                      {currentAnimal.createdAt && ` (${new Date(currentAnimal.createdAt).toLocaleDateString()})`}
+                    </span>
+                  )}
+                  {currentAnimal.createdBy && currentAnimal.updatedBy && <span className="text-slate-300">•</span>}
+                  {currentAnimal.updatedBy && (
+                    <span className="flex items-center gap-1">
+                      ✏️ <strong className="text-slate-700">Última edición:</strong> {currentAnimal.updatedBy}
+                      {currentAnimal.updatedAt && ` (${new Date(currentAnimal.updatedAt).toLocaleDateString()})`}
+                    </span>
+                  )}
                 </div>
               )}
             </div>

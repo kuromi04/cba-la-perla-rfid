@@ -46,6 +46,14 @@ export interface Animal {
   fechaFallecimiento?: string;
   causaFallecimiento?: string;
   ubicacionPrevia?: string;
+
+  // Trazabilidad de Auditoría por Usuario
+  createdBy?: string;
+  createdById?: string;
+  createdAt?: string;
+  updatedBy?: string;
+  updatedById?: string;
+  updatedAt?: string;
 }
 
 export interface KardexRecord {
@@ -150,6 +158,31 @@ export interface AdministrationLog {
   faltantesRestantes: number;
 }
 
+export interface AuditLogEntry {
+  id?: number;
+  timestamp: string; // ISO String
+  userId: string;
+  userName: string;
+  userRole: string;
+  action:
+    | "REGISTRO_ANIMAL"
+    | "MODIFICACION_ANIMAL"
+    | "CAMBIO_UBICACION"
+    | "CAMBIO_COLOR"
+    | "FOTO_SUBIDA"
+    | "FOTO_ELIMINADA"
+    | "TRATAMIENTO_PRESCRITO"
+    | "TRATAMIENTO_EDITADO"
+    | "CENSO_CONFIRMADO"
+    | "BAJA_FALLECIDO";
+  microchip: string;
+  animalName?: string;
+  location?: string;
+  details: string;
+  previousValue?: string;
+  newValue?: string;
+}
+
 class ShelterDatabase extends Dexie {
   animals!: Table<Animal, number>;
   kardex!: Table<KardexRecord, number>;
@@ -159,6 +192,7 @@ class ShelterDatabase extends Dexie {
   shiftTasks!: Table<ShiftTask, number>;
   administrationLogs!: Table<AdministrationLog, number>;
   staff!: Table<any, string>;
+  auditLogs!: Table<AuditLogEntry, number>;
 
   constructor() {
     super("ShelterAnimalDB");
@@ -171,6 +205,18 @@ class ShelterDatabase extends Dexie {
       shiftTasks: "++id, microchip, shift, isCompleted, laborType, location, species, kardexId",
       administrationLogs: "++id, kardexId, microchip, appliedAt, appliedBy, area",
       staff: "&id, name, role, area, token",
+    });
+
+    this.version(7).stores({
+      animals: "++id, &microchip, shortChip, name, species, location, status, hc, isFeral, createdById, updatedById",
+      kardex: "++id, microchip, shortChip, system, status, startDate, endDate, section, area, dosisFaltantes",
+      census: "++id, microchip, location, scannedAt, area",
+      shelterRecords: "++id, microchip, shortChip, ubicacion, section, sistema",
+      gateraRecords: "++id, microchip, shortChip, ubicacion, hc, isFeral, sistema, createdById, updatedById",
+      shiftTasks: "++id, microchip, shift, isCompleted, laborType, location, species, kardexId",
+      administrationLogs: "++id, kardexId, microchip, appliedAt, appliedBy, area",
+      staff: "&id, name, role, area, token, email",
+      auditLogs: "++id, timestamp, userId, userName, userRole, action, microchip",
     });
   }
 }

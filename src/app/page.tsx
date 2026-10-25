@@ -9,8 +9,9 @@ import { TurnosTab } from "@/components/TurnosTab";
 import { MagicLinkModal } from "@/components/MagicLinkModal";
 import { LoginModal } from "@/components/LoginModal";
 import { SupabaseModal } from "@/components/SupabaseModal";
+import { AdminDashboardModal } from "@/components/AdminDashboardModal";
 import { AlcaldiaMedellinLogo, LaPerlaLogo, DeveloperCredit } from "@/components/OfficialLogos";
-import { StaffMember, getAllStaff, canEditAnimals, registerStaffMember } from "@/lib/staff";
+import { StaffMember, getAllStaff, getFieldStaff, canEditAnimals, registerStaffMember } from "@/lib/staff";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import {
   Scan,
@@ -26,6 +27,7 @@ import {
   ChevronDown,
   ArrowUp,
   Cloud,
+  Shield,
 } from "lucide-react";
 import {
   isSupabaseConfigured,
@@ -44,6 +46,7 @@ export default function Home() {
   const [isMagicModalOpen, setIsMagicModalOpen] = useState<boolean>(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState<boolean>(false);
+  const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState<boolean>(false);
   const [scannedChipParam, setScannedChipParam] = useState<string>("");
   const [showScrollTop, setShowScrollTop] = useState<boolean>(false);
   const contentRef = React.useRef<HTMLDivElement>(null);
@@ -110,7 +113,7 @@ export default function Home() {
 
     // 2. Detección de sesión y personal registrado dinámicamente
     const initSession = async () => {
-      const staff = await getAllStaff();
+      const staff = await getFieldStaff();
 
       if (typeof window !== "undefined") {
         const params = new URLSearchParams(window.location.search);
@@ -159,9 +162,9 @@ export default function Home() {
             return;
           }
         } else {
-          // Recuperar última sesión guardada si existe
+          // Recuperar última sesión guardada si existe (ignorando sesiones antiguas de admin)
           const savedUserId = localStorage.getItem("cba_laperla_active_user");
-          if (savedUserId) {
+          if (savedUserId && savedUserId !== "staff-master-admin") {
             const found = staff.find((s) => s.id === savedUserId);
             if (found) {
               setCurrentUser(found);
@@ -193,7 +196,7 @@ export default function Home() {
 
     const staffTimer = setInterval(() => {
       if (navigator.onLine) {
-        getAllStaff().catch(() => {});
+        getFieldStaff().catch(() => {});
         syncAnimalsBidirectional().then(() => refreshActiveCatsCount()).catch(() => {});
       } else {
         refreshActiveCatsCount().catch(() => {});
@@ -294,6 +297,17 @@ export default function Home() {
 
           {/* Acciones Rápidas */}
           <div className="flex items-center gap-1.5 shrink-0">
+            {/* Botón Panel de Administración & Auditoría */}
+            <button
+              type="button"
+              onClick={() => setIsAdminDashboardOpen(true)}
+              className="flex items-center gap-1 bg-gradient-to-r from-purple-700 to-indigo-800 hover:from-purple-600 hover:to-indigo-700 text-white text-[11px] font-black px-2.5 py-1.5 rounded-lg shadow-sm border border-purple-400/40 active:scale-95 transition-all"
+              title="Panel de Administración, Auditoría y Control de Personal"
+            >
+              <Shield className="w-3.5 h-3.5 text-purple-300" />
+              <span className="hidden xs:inline">Admin</span>
+            </button>
+
             {/* Botón Link Mágico */}
             <button
               type="button"
@@ -302,7 +316,7 @@ export default function Home() {
               title="Generar Link Mágico para Auxiliares y Operarios"
             >
               <Link2 className="w-3.5 h-3.5" />
-              <span>Link Mágico</span>
+              <span className="hidden sm:inline">Link Mágico</span>
             </button>
 
             {/* Botón Estado y Configuración Supabase Cloud */}
@@ -424,6 +438,13 @@ export default function Home() {
         onClose={() => setIsLoginModalOpen(false)}
         currentUser={currentUser}
         onSelectUser={handleSelectUser}
+        onOpenAdminDashboard={() => setIsAdminDashboardOpen(true)}
+      />
+
+      {/* Modal de Dashboard de Administración y Auditoría */}
+      <AdminDashboardModal
+        isOpen={isAdminDashboardOpen}
+        onClose={() => setIsAdminDashboardOpen(false)}
       />
 
       {/* Modal Generador de Links Mágicos */}

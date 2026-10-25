@@ -472,6 +472,12 @@ export async function syncAnimalToSupabase(animal: Animal): Promise<boolean> {
         fechaFallecimiento: animal.fechaFallecimiento,
         causaFallecimiento: animal.causaFallecimiento,
         ubicacionPrevia: animal.ubicacionPrevia,
+        createdBy: animal.createdBy,
+        createdById: animal.createdById,
+        createdAt: animal.createdAt,
+        updatedBy: animal.updatedBy,
+        updatedById: animal.updatedById,
+        updatedAt: animal.updatedAt,
       },
       updated_at: new Date().toISOString(),
     };
@@ -607,6 +613,12 @@ export async function fetchAnimalsFromSupabase(): Promise<Animal[]> {
         causaFallecimiento: attrs.causaFallecimiento,
         ubicacionPrevia: attrs.ubicacionPrevia,
         lastCensusDate: attrs.lastCensusDate,
+        createdBy: attrs.createdBy,
+        createdById: attrs.createdById,
+        createdAt: attrs.createdAt,
+        updatedBy: attrs.updatedBy,
+        updatedById: attrs.updatedById,
+        updatedAt: attrs.updatedAt,
       } as Animal;
     });
   } catch (err) {
@@ -614,3 +626,56 @@ export async function fetchAnimalsFromSupabase(): Promise<Animal[]> {
     return [];
   }
 }
+
+/**
+ * 5. SINCRONIZACIÓN DE LOGS DE AUDITORÍA
+ */
+export async function syncAuditLogToSupabase(log: any): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  try {
+    const { error } = await client.from("audit_logs").insert({
+      timestamp: log.timestamp,
+      user_id: log.userId,
+      user_name: log.userName,
+      user_role: log.userRole,
+      action: log.action,
+      microchip: log.microchip,
+      animal_name: log.animalName || null,
+      location: log.location || null,
+      details: log.details,
+      previous_value: log.previousValue || null,
+      new_value: log.newValue || null,
+    });
+
+    if (error) {
+      // Si la tabla audit_logs no existe aún en el proyecto de Supabase del usuario, advertir sin romper la app
+      console.warn("Supabase audit log insert notice:", error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn("Error syncing audit log to Supabase:", err);
+    return false;
+  }
+}
+
+export async function fetchAuditLogsFromSupabase(): Promise<any[]> {
+  const client = getSupabaseClient();
+  if (!client) return [];
+
+  try {
+    const { data, error } = await client
+      .from("audit_logs")
+      .select("*")
+      .order("timestamp", { ascending: false })
+      .limit(100);
+
+    if (error || !data) return [];
+    return data;
+  } catch (err) {
+    return [];
+  }
+}
+

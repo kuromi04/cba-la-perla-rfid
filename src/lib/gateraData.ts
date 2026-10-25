@@ -51,6 +51,14 @@ export interface GateraCat {
   causaFallecimiento?: string;
   ubicacionPrevia?: string;
   photoUrl?: string;
+
+  // Trazabilidad de Auditoría por Usuario
+  createdBy?: string;
+  createdById?: string;
+  createdAt?: string;
+  updatedBy?: string;
+  updatedById?: string;
+  updatedAt?: string;
 }
 
 export const GATERA_CATS_DATA: GateraCat[] = [

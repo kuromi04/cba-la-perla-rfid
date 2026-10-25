@@ -22,6 +22,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { compressImageFile } from "@/lib/imageUtils";
+import { recordAudit } from "@/lib/audit";
 import { OFFICIAL_GATERA_LOCATIONS, getAllGateraLocations } from "@/lib/gateraLocations";
 import { OFFICIAL_GATERA_COLORS, POPULAR_GATERA_COLORS } from "@/lib/gateraColors";
 
@@ -251,6 +252,12 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
         vifStatus,
         felvStatus,
         photoUrl: photoUrl || existingAnimal?.photoUrl || undefined,
+        createdBy: existingAnimal?.createdBy || currentUser?.name || "Personal CBA La Perla",
+        createdById: existingAnimal?.createdById || currentUser?.id || "anon_user",
+        createdAt: existingAnimal?.createdAt || nowIso,
+        updatedBy: currentUser?.name || "Personal CBA La Perla",
+        updatedById: currentUser?.id || "anon_user",
+        updatedAt: nowIso,
       };
 
       if (existingAnimal?.id) {
@@ -302,6 +309,12 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
         tipo: "FS",
         desparasitante: "AL DÍA (FELINO)",
         photoUrl: photoUrl || existingGatera?.photoUrl || existingAnimal?.photoUrl || undefined,
+        createdBy: existingGatera?.createdBy || currentUser?.name || "Personal CBA La Perla",
+        createdById: existingGatera?.createdById || currentUser?.id || "anon_user",
+        createdAt: existingGatera?.createdAt || nowIso,
+        updatedBy: currentUser?.name || "Personal CBA La Perla",
+        updatedById: currentUser?.id || "anon_user",
+        updatedAt: nowIso,
       };
 
       if (existingGatera?.id) {
@@ -428,8 +441,20 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
 
       // Feedback háptico
       if (typeof window !== "undefined" && "vibrate" in navigator) {
-        navigator.vibrate([100, 50, 150]);
+        navigator.vibrate([30, 50, 30]);
       }
+
+      // Registrar log de auditoría con autor y fecha exacta
+      await recordAudit({
+        action: existingAnimal?.id ? "MODIFICACION_ANIMAL" : "REGISTRO_ANIMAL",
+        microchip: cleanChip,
+        animalName: formattedName,
+        location: formattedLocation,
+        details: existingAnimal?.id
+          ? `Ficha actualizada en ${formattedLocation} (${formattedColor}) por ${currentUser?.name || "Personal"}`
+          : `Nuevo ingreso felino registrado en ${formattedLocation} (${formattedColor}) por ${currentUser?.name || "Personal"}`,
+        user: currentUser,
+      });
 
       onAnimalRegistered(finalAnimal);
       onClose();
