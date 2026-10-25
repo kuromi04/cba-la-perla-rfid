@@ -298,11 +298,12 @@ export async function getConnectedStaff(): Promise<ConnectedStaff[]> {
   if (!client) return [];
 
   try {
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    // Consultar todos los registros de presencia recientes (últimas 24 horas)
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const { data, error } = await client
       .from("staff_presence")
       .select("*")
-      .gte("last_seen", fiveMinutesAgo)
+      .gte("last_seen", twentyFourHoursAgo)
       .order("last_seen", { ascending: false });
 
     if (error || !data) return [];
@@ -310,7 +311,9 @@ export async function getConnectedStaff(): Promise<ConnectedStaff[]> {
     const now = Date.now();
     return data.map((row: any) => {
       const lastSeenTime = new Date(row.last_seen).getTime();
-      const isOnlineNow = now - lastSeenTime < 2 * 60 * 1000; // Activo en los últimos 2 min
+      const diffMs = Math.abs(now - lastSeenTime);
+      // Activo en línea si reportó en los últimos 15 minutos (tolerante a latencia, pantalla bloqueada y modo campo)
+      const isOnlineNow = diffMs <= 15 * 60 * 1000;
       return {
         staff_id: row.staff_id,
         staff_name: row.staff_name,
@@ -328,7 +331,7 @@ export async function getConnectedStaff(): Promise<ConnectedStaff[]> {
 }
 
 /**
- * Loop de monitoreo de presencia (Heartbeat cada 15s)
+ * Loop de monitoreo de presencia (Heartbeat cada 15s con respuesta inmediata a foco / desbloqueo de pantalla)
  */
 export function startPresenceMonitoring(
   currentUser: StaffMember | null,
@@ -350,9 +353,27 @@ export function startPresenceMonitoring(
   tick();
   const intervalId = setInterval(tick, 15000);
 
+  // Despertar instantáneo al volver a la pestaña, enfocar la ventana o desbloquear el móvil
+  const handleWakeup = () => {
+    if (typeof document !== "undefined" && document.visibilityState === "visible") {
+      tick();
+    }
+  };
+
+  if (typeof window !== "undefined") {
+    window.addEventListener("focus", handleWakeup);
+    window.addEventListener("online", handleWakeup);
+    document.addEventListener("visibilitychange", handleWakeup);
+  }
+
   return () => {
     isStopped = true;
     clearInterval(intervalId);
+    if (typeof window !== "undefined") {
+      window.removeEventListener("focus", handleWakeup);
+      window.removeEventListener("online", handleWakeup);
+      document.removeEventListener("visibilitychange", handleWakeup);
+    }
   };
 }
 
@@ -489,7 +510,9 @@ export async function syncAllTasksToSupabase(tasks: ShiftTask[]): Promise<void> 
 /**
  * 4. SINCRONIZACIÓN DE ANIMALES Y CENSO
  */
-export async function syncAnimalToSupabase(animal: Animal): Promise<boolean> {
+export async function syncAnimalToSupabase(
+  animal: Animal & { deletePhoto?: boolean }
+): Promise<boolean> {
   const client = getSupabaseClient();
   if (!client) return false;
 
@@ -498,6 +521,23 @@ export async function syncAnimalToSupabase(animal: Animal): Promise<boolean> {
       animal.location?.toUpperCase().trim() === "FALLECIDO" ||
       animal.status?.toLowerCase().trim() === "fallecido";
 
+    // Preservar la fotografía existente en Supabase si el animal entrante no la incluye explícitamente y no se solicitó borrado
+    let resolvedPhoto = animal.photoUrl || null;
+    if (!resolvedPhoto && !animal.deletePhoto) {
+      try {
+        const { data: remoteExisting } = await client
+          .from("animals")
+          .select("photo_url, attributes")
+          .eq("microchip", animal.microchip)
+          .maybeSingle();
+        if (remoteExisting?.photo_url) {
+          resolvedPhoto = remoteExisting.photo_url;
+        } else if (remoteExisting?.attributes?.photoUrl) {
+          resolvedPhoto = remoteExisting.attributes.photoUrl;
+        }
+      } catch {}
+    }
+
     const payload = {
       microchip: animal.microchip,
       name: animal.name,
@@ -505,7 +545,7 @@ export async function syncAnimalToSupabase(animal: Animal): Promise<boolean> {
       breed: animal.breed || "DPC",
       sex: animal.sexoCode?.startsWith("H") ? "hembra" : "macho",
       status: isFallecido ? "fallecido" : (animal.status || "activo"),
-      photo_url: animal.photoUrl || null,
+      photo_url: resolvedPhoto,
       notes: animal.notes || animal.observacionesMedicas,
       retroviral_status: animal.retroviralStatus || null,
       vif_status: animal.vifStatus || null,
@@ -516,7 +556,7 @@ export async function syncAnimalToSupabase(animal: Animal): Promise<boolean> {
         isFeral: animal.isFeral,
         location: animal.location,
         color: animal.color,
-        photoUrl: animal.photoUrl || null,
+        photoUrl: resolvedPhoto,
         condicionCorporal: animal.condicionCorporal,
         estadoSalud: animal.estadoSalud,
         tipoIngreso: animal.tipoIngreso,

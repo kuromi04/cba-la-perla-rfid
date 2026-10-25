@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
-import { db, Animal } from "@/lib/db";
+import { db, Animal, searchAnimalSmart } from "@/lib/db";
 import { GateraCat } from "@/lib/gateraData";
 import { StaffMember, canEditAnimals } from "@/lib/staff";
 import {
@@ -94,15 +94,31 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
   const [selectedLocCategory, setSelectedLocCategory] = useState<string>("CUARENTENA");
 
   useEffect(() => {
-    if (initialMicrochip) {
-      const chip = initialMicrochip.trim();
-      setMicrochip(chip);
-      db.animals.where("microchip").equals(chip).first().then((ex) => {
-        if (ex?.photoUrl) {
-          setPhotoUrl(ex.photoUrl);
-        }
-      });
-    }
+    const chipToSearch = (initialMicrochip || microchip).trim();
+    if (!chipToSearch) return;
+    if (initialMicrochip) setMicrochip(initialMicrochip.trim());
+
+    searchAnimalSmart(chipToSearch).then(async (found) => {
+      if (found?.photoUrl) {
+        setPhotoUrl(found.photoUrl);
+      } else if (typeof window !== "undefined" && navigator.onLine) {
+        try {
+          const { getSupabaseClient } = await import("@/lib/supabase");
+          const client = getSupabaseClient();
+          if (client) {
+            const { data } = await client
+              .from("animals")
+              .select("photo_url, attributes")
+              .eq("microchip", chipToSearch)
+              .maybeSingle();
+            const remotePhoto = data?.photo_url || data?.attributes?.photoUrl;
+            if (remotePhoto) {
+              setPhotoUrl(remotePhoto);
+            }
+          }
+        } catch {}
+      }
+    });
   }, [initialMicrochip]);
 
   const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -225,17 +241,21 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
         .filter(Boolean)
         .join(" | ");
 
-      // 1. Guardar o Actualizar en tabla central: db.animals
+      // 1. Verificar registros existentes en ambas tablas para preservar fotos y metadatos
+      const existingGatera = await db.gateraRecords.where("microchip").equals(cleanChip).first();
+      const resolvedPhoto = photoUrl || existingAnimal?.photoUrl || existingGatera?.photoUrl || undefined;
+
+      // Guardar o Actualizar en tabla central: db.animals
       const finalAnimal: Animal = {
         id: existingAnimal?.id,
         microchip: cleanChip,
         shortChip,
-        name: formattedName !== "S/N" ? formattedName : (existingAnimal?.name || "S/N"),
+        name: formattedName,
         species: "gato",
-        breed: `${formattedRaza} - ${formattedColor}`,
+        breed: existingAnimal?.breed || "Común Europeo / Mestizo",
         gender,
         location: formattedLocation,
-        status: formattedLocation === "FALLECIDO" ? "fallecido" : (estadoSalud.toLowerCase().includes("delicado") ? "cuarentena" : "activo"),
+        status: formattedLocation === "FALLECIDO" ? "fallecido" : "activo",
         fechaFallecimiento: formattedLocation === "FALLECIDO" ? nowIso : undefined,
         causaFallecimiento: formattedLocation === "FALLECIDO" ? (compiledNotes || "Reportado como fallecido en registro") : undefined,
         ubicacionPrevia: formattedLocation === "FALLECIDO" ? (existingAnimal?.location || "GATERA") : undefined,
@@ -253,7 +273,7 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
         retroviralStatus: computedRetro,
         vifStatus,
         felvStatus,
-        photoUrl: photoUrl || existingAnimal?.photoUrl || undefined,
+        photoUrl: resolvedPhoto,
         createdBy: existingAnimal?.createdBy || currentUser?.name || "Personal CBA La Perla",
         createdById: existingAnimal?.createdById || currentUser?.id || "anon_user",
         createdAt: existingAnimal?.createdAt || nowIso,
@@ -270,7 +290,6 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
       }
 
       // 2. Guardar o Actualizar en la Planilla Maestra de Gatera (24 columnas)
-      const existingGatera = await db.gateraRecords.where("microchip").equals(cleanChip).first();
       const gateraEntry: GateraCat = {
         id: existingGatera?.id,
         ubicacion: formattedLocation, // Columna B

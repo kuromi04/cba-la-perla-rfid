@@ -11,7 +11,13 @@ import {
   verifyAdminKey,
   MASTER_ADMIN,
 } from "@/lib/staff";
-import { getAuditLogs, getAuditStatsByUser, UserAuditStat, recordAudit } from "@/lib/audit";
+import {
+  getAuditLogs,
+  getAuditStatsByUser,
+  UserAuditStat,
+  recordAudit,
+  exportUserActivityExcelReport,
+} from "@/lib/audit";
 import { AuditLogEntry, db, Animal, KardexRecord, ShiftTask, syncAnimalsBidirectional } from "@/lib/db";
 import { isSupabaseConfigured, syncAnimalToSupabase, deleteAnimalFromSupabase } from "@/lib/supabase";
 import { computeEdaAnalysis, exportEdaExcelReport, EdaSummary } from "@/lib/edaAnalysis";
@@ -52,7 +58,10 @@ import {
   HeartPulse,
   Eye,
   Check,
+  Camera,
+  ZoomIn,
 } from "lucide-react";
+import { compressImageFile } from "@/lib/imageUtils";
 
 interface AdminDashboardModalProps {
   isOpen: boolean;
@@ -95,6 +104,9 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [searchAuditQuery, setSearchAuditQuery] = useState("");
   const [filterAction, setFilterAction] = useState<string>("TODAS");
   const [filterUser, setFilterUser] = useState<string>("TODOS");
+  const [selectedStatUser, setSelectedStatUser] = useState<string>("all");
+  const [selectedPhotoPreview, setSelectedPhotoPreview] = useState<string | null>(null);
+  const [chipSearchInUser, setChipSearchInUser] = useState<string>("");
 
   // Modales y Formularios Inline de Administración
   const [editingAnimal, setEditingAnimal] = useState<Animal | null>(null);
@@ -235,6 +247,35 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     }
   };
 
+  const handleExportActivityExcel = async () => {
+    try {
+      setLoading(true);
+      await exportUserActivityExcelReport(userStats, auditLogs);
+      setFeedback("📥 Reporte oficial de actividad y trazabilidad de funcionarios exportado en Excel.");
+      setTimeout(() => setFeedback(null), 4000);
+    } catch (err) {
+      console.error("Error al exportar actividad:", err);
+      alert("Error al exportar el reporte de actividad a Excel.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUploadPhotoForEditingAnimal = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !editingAnimal) return;
+    try {
+      setLoading(true);
+      const base64 = await compressImageFile(file, 800, 0.75);
+      setEditingAnimal({ ...editingAnimal, photoUrl: base64 });
+    } catch (err) {
+      alert("Error al procesar la fotografía.");
+    } finally {
+      setLoading(false);
+      e.target.value = "";
+    }
+  };
+
   // --- CRUD DE ANIMALES ---
   const handleSaveAnimalEdit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -243,10 +284,15 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     try {
       const chip = editingAnimal.microchip.trim().toUpperCase();
       const nowIso = new Date().toISOString();
+
+      const catRec = await db.gateraRecords.where("microchip").equals(chip).first();
+      const resolvedPhoto = editingAnimal.photoUrl || catRec?.photoUrl || undefined;
+
       const updatedData: Animal = {
         ...editingAnimal,
         microchip: chip,
         location: editingAnimal.location.trim().toUpperCase(),
+        photoUrl: resolvedPhoto,
         updatedAt: nowIso,
         updatedBy: "Administrador Maestro",
         updatedById: MASTER_ADMIN.id,
@@ -255,7 +301,6 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       await db.animals.update(editingAnimal.id, updatedData);
 
       // Actualizar en db.gateraRecords
-      const catRec = await db.gateraRecords.where("microchip").equals(chip).first();
       if (catRec && catRec.id) {
         await db.gateraRecords.update(catRec.id, {
           ubicacion: updatedData.location,
@@ -267,6 +312,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
           medicacion: updatedData.notes || "",
           observacionesMedicas: updatedData.observacionesMedicas || "",
           medicoVeterinario: updatedData.medicoVeterinario || "",
+          photoUrl: resolvedPhoto,
         });
       }
 
@@ -1362,10 +1408,12 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                                   <img
                                     src={a.photoUrl}
                                     alt={a.name}
-                                    className="w-8 h-8 rounded-lg object-cover border border-purple-200"
+                                    onClick={() => setSelectedPhotoPreview(a.photoUrl!)}
+                                    className="w-9 h-9 rounded-xl object-cover border border-purple-200 cursor-pointer hover:scale-105 active:scale-95 shadow-2xs transition-all"
+                                    title="Toca para ver la fotografía ampliada"
                                   />
                                 ) : (
-                                  <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-[10px] text-slate-400">
+                                  <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center text-xs text-slate-400 border border-slate-200">
                                     🐱
                                   </div>
                                 )}
@@ -1458,6 +1506,63 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                     </div>
 
                     <form onSubmit={handleSaveAnimalEdit} className="p-4 space-y-3 overflow-y-auto flex-1 text-xs">
+                      {/* Fotografía del Felino */}
+                      <div className="flex items-center gap-4 p-3 bg-slate-50 border border-slate-200 rounded-2xl">
+                        <div className="relative w-20 h-20 rounded-2xl bg-white border border-slate-200 overflow-hidden flex items-center justify-center shrink-0 shadow-inner group">
+                          {editingAnimal.photoUrl ? (
+                            <>
+                              <img
+                                src={editingAnimal.photoUrl}
+                                alt={editingAnimal.name}
+                                className="w-full h-full object-cover cursor-pointer hover:opacity-90"
+                                onClick={() => setSelectedPhotoPreview(editingAnimal.photoUrl!)}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setEditingAnimal({ ...editingAnimal, photoUrl: undefined })}
+                                className="absolute top-1 right-1 bg-red-600 hover:bg-red-700 text-white rounded-full p-1 shadow-md transition-opacity"
+                                title="Quitar foto"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </>
+                          ) : (
+                            <div className="text-center p-2 text-slate-400">
+                              <Camera className="w-6 h-6 mx-auto mb-1 stroke-1" />
+                              <span className="text-[10px] font-bold block">Sin Foto</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1 space-y-1.5">
+                          <label className="text-xs font-bold text-slate-700 block">Fotografía del Felino:</label>
+                          <div className="flex flex-wrap gap-2">
+                            <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl font-bold text-xs transition-all active:scale-95">
+                              <Camera className="w-3.5 h-3.5" />
+                              <span>{editingAnimal.photoUrl ? "Cambiar Fotografía" : "Subir Fotografía"}</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={handleUploadPhotoForEditingAnimal}
+                              />
+                            </label>
+                            {editingAnimal.photoUrl && (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedPhotoPreview(editingAnimal.photoUrl!)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>Ver Ampliada</span>
+                              </button>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-slate-500">
+                            Se optimiza automáticamente a 800px (~40KB) para almacenamiento y sincronización en Supabase.
+                          </p>
+                        </div>
+                      </div>
+
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <label className="font-bold text-slate-700 block mb-1">Nombre Felino:</label>
@@ -1953,65 +2058,394 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
               {/* PESTAÑA 5: ACTIVIDAD POR USUARIO */}
               {activeTab === "stats" && (
                 <div className="space-y-4">
-                  <div>
-                    <h4 className="font-black text-slate-900 text-sm">
-                      Desglose de Actividad por Funcionario
-                    </h4>
-                    <p className="text-xs text-slate-500">
-                      Total de animales registrados, modificados y tratamientos instaurados por cada médico y auxiliar.
-                    </p>
-                  </div>
+                  {/* Barra de Controles y Exportación Superior */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-purple-50/60 border border-purple-200/80 rounded-3xl">
+                    <div>
+                      <h4 className="font-black text-slate-900 text-sm flex items-center gap-1.5">
+                        <Users className="w-4 h-4 text-purple-700" />
+                        Auditoría y Trazabilidad de Actividad por Funcionario
+                      </h4>
+                      <p className="text-xs text-slate-500">
+                        Supervisa qué felinos registró cada funcionario, ediciones clínicas, medicaciones y horas de trabajo.
+                      </p>
+                    </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {userStats.map((u) => (
-                      <div
-                        key={u.userId}
-                        className="p-4 bg-slate-50 hover:bg-purple-50/40 border border-slate-200 rounded-2xl space-y-3 transition-all shadow-xs"
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {/* Selector de Funcionario */}
+                      <select
+                        value={selectedStatUser}
+                        onChange={(e) => {
+                          setSelectedStatUser(e.target.value);
+                          setChipSearchInUser("");
+                        }}
+                        className="px-3 py-2 bg-white border border-purple-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-2xs"
                       >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-9 h-9 rounded-xl bg-purple-700 text-white flex items-center justify-center font-black text-xs shadow-xs">
-                              {u.userRole === "veterinario"
-                                ? "DR"
-                                : u.userRole === "auxiliar"
-                                ? "AUX"
-                                : "OP"}
-                            </div>
-                            <div>
-                              <span className="font-black text-slate-900 text-xs block leading-tight">
-                                {u.userName}
-                              </span>
-                              <span className="text-[10px] text-purple-700 font-bold uppercase">
-                                {u.userRole}
-                              </span>
-                            </div>
-                          </div>
-                          <span className="text-[10px] font-mono text-slate-400">
-                            Última: {new Date(u.lastActive).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                          </span>
-                        </div>
+                        <option value="all">👥 Todos los Funcionarios ({userStats.length})</option>
+                        {userStats.map((u) => (
+                          <option key={u.userId} value={u.userId}>
+                            {u.userRole === "veterinario" ? "Dr." : u.userRole === "auxiliar" ? "Aux." : "Op."} {u.userName} ({u.registeredCount} gatos)
+                          </option>
+                        ))}
+                      </select>
 
-                        <div className="grid grid-cols-4 gap-1.5 pt-1 text-center">
-                          <div className="p-2 bg-white rounded-xl border border-slate-100 shadow-2xs">
-                            <span className="text-xs font-black text-purple-900 block">{u.registeredCount}</span>
-                            <span className="text-[9px] text-slate-500 font-bold block uppercase">Nuevos</span>
+                      {/* Botón Exportar Reporte Excel Oficial */}
+                      <button
+                        type="button"
+                        onClick={handleExportActivityExcel}
+                        className="px-3.5 py-2 bg-purple-700 hover:bg-purple-800 active:scale-95 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-all"
+                        title="Exportar reporte detallado de actividad de funcionarios a Excel"
+                      >
+                        <FileSpreadsheet className="w-4 h-4 text-purple-200" />
+                        <span>📥 Descargar Excel</span>
+                      </button>
+
+                      {/* Botón Refrescar Auditoría */}
+                      <button
+                        type="button"
+                        onClick={refreshAllData}
+                        className="p-2 bg-white hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-xl transition-all shadow-2xs"
+                        title="Refrescar datos de auditoría"
+                      >
+                        <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Tarjetas Métricas Globales */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    <div className="p-3 bg-white border border-slate-200 rounded-2xl shadow-2xs text-center">
+                      <span className="text-[10px] uppercase font-bold text-slate-500 block">Personal Activo</span>
+                      <span className="text-xl font-black text-purple-900">{userStats.length}</span>
+                      <span className="text-[9px] text-purple-600 font-semibold block">Médicos y Auxiliares</span>
+                    </div>
+                    <div className="p-3 bg-white border border-slate-200 rounded-2xl shadow-2xs text-center">
+                      <span className="text-[10px] uppercase font-bold text-slate-500 block">Felinos Registrados</span>
+                      <span className="text-xl font-black text-emerald-900">
+                        {userStats.reduce((acc, u) => acc + (u.registeredCount || 0), 0)}
+                      </span>
+                      <span className="text-[9px] text-emerald-600 font-semibold block">Chips ingresados</span>
+                    </div>
+                    <div className="p-3 bg-white border border-slate-200 rounded-2xl shadow-2xs text-center">
+                      <span className="text-[10px] uppercase font-bold text-slate-500 block">Modificaciones Clínicas</span>
+                      <span className="text-xl font-black text-indigo-900">
+                        {userStats.reduce((acc, u) => acc + (u.modifiedCount || 0), 0)}
+                      </span>
+                      <span className="text-[9px] text-indigo-600 font-semibold block">Cambios de estado/lugar</span>
+                    </div>
+                    <div className="p-3 bg-white border border-slate-200 rounded-2xl shadow-2xs text-center">
+                      <span className="text-[10px] uppercase font-bold text-slate-500 block">Acciones en Kardex/Turno</span>
+                      <span className="text-xl font-black text-blue-900">
+                        {userStats.reduce((acc, u) => acc + (u.treatmentCount || 0) + (u.tasksCompletedCount || 0), 0)}
+                      </span>
+                      <span className="text-[9px] text-blue-600 font-semibold block">Meds y dosis cumplidas</span>
+                    </div>
+                  </div>
+
+                  {/* VISTA 1: TODOS LOS FUNCIONARIOS (CUADRÍCULA) */}
+                  {selectedStatUser === "all" ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {userStats.map((u) => (
+                        <div
+                          key={u.userId}
+                          className="p-4 bg-slate-50 hover:bg-purple-50/50 border border-slate-200 hover:border-purple-300 rounded-3xl space-y-3 transition-all shadow-xs"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-purple-700 to-indigo-800 text-white flex items-center justify-center font-black text-xs shadow-xs shrink-0">
+                                {u.userRole === "veterinario"
+                                  ? "DR"
+                                  : u.userRole === "auxiliar"
+                                  ? "AUX"
+                                  : "OP"}
+                              </div>
+                              <div className="min-w-0">
+                                <span className="font-black text-slate-900 text-xs block leading-tight truncate">
+                                  {u.userName}
+                                </span>
+                                <span className="text-[10px] text-purple-700 font-bold uppercase tracking-wider">
+                                  {u.userRole} • {u.totalActions} acciones
+                                </span>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedStatUser(u.userId)}
+                              className="px-2.5 py-1 bg-white hover:bg-purple-600 hover:text-white text-purple-700 border border-purple-200 rounded-xl text-[10px] font-black transition-all shrink-0 shadow-2xs"
+                            >
+                              🔍 Ver Detalles
+                            </button>
                           </div>
-                          <div className="p-2 bg-white rounded-xl border border-slate-100 shadow-2xs">
-                            <span className="text-xs font-black text-indigo-900 block">{u.modifiedCount}</span>
-                            <span className="text-[9px] text-slate-500 font-bold block uppercase">Ediciones</span>
+
+                          <div className="grid grid-cols-4 gap-1.5 pt-1 text-center">
+                            <div className="p-2 bg-white rounded-xl border border-slate-100 shadow-2xs">
+                              <span className="text-xs font-black text-purple-900 block">{u.registeredCount}</span>
+                              <span className="text-[9px] text-slate-500 font-bold block uppercase">Gatos Subidos</span>
+                            </div>
+                            <div className="p-2 bg-white rounded-xl border border-slate-100 shadow-2xs">
+                              <span className="text-xs font-black text-indigo-900 block">{u.modifiedCount}</span>
+                              <span className="text-[9px] text-slate-500 font-bold block uppercase">Ediciones</span>
+                            </div>
+                            <div className="p-2 bg-white rounded-xl border border-slate-100 shadow-2xs">
+                              <span className="text-xs font-black text-emerald-900 block">{u.treatmentCount}</span>
+                              <span className="text-[9px] text-slate-500 font-bold block uppercase">Tratamientos</span>
+                            </div>
+                            <div className="p-2 bg-white rounded-xl border border-slate-100 shadow-2xs">
+                              <span className="text-xs font-black text-blue-900 block">{u.tasksCompletedCount || u.censusCount}</span>
+                              <span className="text-[9px] text-slate-500 font-bold block uppercase">Turnos/Censos</span>
+                            </div>
                           </div>
-                          <div className="p-2 bg-white rounded-xl border border-slate-100 shadow-2xs">
-                            <span className="text-xs font-black text-emerald-900 block">{u.treatmentCount}</span>
-                            <span className="text-[9px] text-slate-500 font-bold block uppercase">Meds/Rx</span>
+
+                          {/* Chips Recientes Subidos por este Usuario */}
+                          {u.registeredChips && u.registeredChips.length > 0 && (
+                            <div className="pt-1">
+                              <span className="text-[10px] font-black text-slate-600 block mb-1">
+                                Chips Subidos ({u.registeredChips.length}):
+                              </span>
+                              <div className="flex flex-wrap gap-1 max-h-16 overflow-y-auto">
+                                {u.registeredChips.slice(0, 8).map((chip) => (
+                                  <span
+                                    key={chip}
+                                    onClick={() => {
+                                      setAnimalSearch(chip);
+                                      setActiveTab("animals");
+                                    }}
+                                    className="px-2 py-0.5 bg-white hover:bg-purple-100 border border-purple-200 text-purple-900 font-mono text-[9px] font-bold rounded-lg cursor-pointer transition-all"
+                                    title="Clic para buscar y ver este felino en la pestaña de Animales"
+                                  >
+                                    {chip.slice(-7)}
+                                  </span>
+                                ))}
+                                {u.registeredChips.length > 8 && (
+                                  <span
+                                    onClick={() => setSelectedStatUser(u.userId)}
+                                    className="px-2 py-0.5 bg-purple-100 text-purple-800 text-[9px] font-black rounded-lg cursor-pointer hover:bg-purple-200"
+                                  >
+                                    +{u.registeredChips.length - 8} más...
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    /* VISTA 2: INSPECTOR DETALLADO DEL FUNCIONARIO SELECCIONADO */
+                    (() => {
+                      const u = userStats.find((s) => s.userId === selectedStatUser || s.userName === selectedStatUser);
+                      if (!u) {
+                        return (
+                          <div className="p-8 text-center text-xs text-slate-400">
+                            Funcionario no encontrado.
                           </div>
-                          <div className="p-2 bg-white rounded-xl border border-slate-100 shadow-2xs">
-                            <span className="text-xs font-black text-blue-900 block">{u.censusCount}</span>
-                            <span className="text-[9px] text-slate-500 font-bold block uppercase">Censos</span>
+                        );
+                      }
+
+                      const filteredChips = (u.registeredChips || []).filter((chip) =>
+                        chip.toLowerCase().includes(chipSearchInUser.toLowerCase())
+                      );
+
+                      // Filtrar logs de este usuario específico
+                      const userLogs = auditLogs.filter(
+                        (l) => l.userId === u.userId || l.userName.toLowerCase() === u.userName.toLowerCase()
+                      );
+
+                      return (
+                        <div className="space-y-4 animate-in fade-in">
+                          {/* Barra de Retorno y Tarjeta Principal */}
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-white border border-purple-200 rounded-3xl shadow-sm">
+                            <div className="flex items-center gap-3">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedStatUser("all")}
+                                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all shrink-0"
+                              >
+                                ← Volver
+                              </button>
+                              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-700 to-indigo-800 text-white flex items-center justify-center font-black text-sm shadow-md shrink-0">
+                                {u.userRole === "veterinario" ? "DR" : u.userRole === "auxiliar" ? "AUX" : "OP"}
+                              </div>
+                              <div>
+                                <h3 className="text-base font-black text-slate-900 leading-tight">
+                                  {u.userName}
+                                </h3>
+                                <p className="text-xs text-purple-700 font-bold uppercase tracking-wider">
+                                  Cargo: {u.userRole} • Total de Acciones: {u.totalActions}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="text-right text-xs">
+                              <span className="text-slate-400 block text-[10px]">Última Intervención Registrada:</span>
+                              <strong className="text-slate-800 font-mono">
+                                {u.lastActive ? new Date(u.lastActive).toLocaleString() : "N/A"}
+                              </strong>
+                            </div>
+                          </div>
+
+                          {/* Sección 1: Felinos Registrados por este Funcionario */}
+                          <div className="bg-white border border-slate-200 rounded-3xl p-5 space-y-3 shadow-xs">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                              <div>
+                                <h4 className="font-black text-slate-900 text-sm flex items-center gap-1.5">
+                                  <span>🐱</span> Felinos Registrados en el Sistema ({u.registeredChips.length})
+                                </h4>
+                                <p className="text-xs text-slate-500">
+                                  Microchips exactos subidos por este funcionario a la base de datos de Gatera.
+                                </p>
+                              </div>
+                              <div className="w-full sm:w-64">
+                                <input
+                                  type="text"
+                                  value={chipSearchInUser}
+                                  onChange={(e) => setChipSearchInUser(e.target.value)}
+                                  placeholder="Filtrar microchips de este funcionario..."
+                                  className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 font-mono"
+                                />
+                              </div>
+                            </div>
+
+                            {filteredChips.length === 0 ? (
+                              <div className="p-6 text-center text-xs text-slate-400 bg-slate-50 rounded-2xl">
+                                No se encontraron microchips registrados con ese criterio.
+                              </div>
+                            ) : (
+                              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-56 overflow-y-auto p-1">
+                                {filteredChips.map((chip) => {
+                                  const anim = animalsList.find((a) => a.microchip === chip);
+                                  return (
+                                    <div
+                                      key={chip}
+                                      onClick={() => {
+                                        setAnimalSearch(chip);
+                                        setActiveTab("animals");
+                                      }}
+                                      className="p-2.5 bg-slate-50 hover:bg-purple-50 border border-slate-200 hover:border-purple-300 rounded-2xl cursor-pointer transition-all flex items-center justify-between shadow-2xs group"
+                                      title="Clic para inspeccionar la ficha completa del felino"
+                                    >
+                                      <div className="min-w-0">
+                                        <span className="font-mono font-black text-purple-900 text-xs block leading-tight group-hover:text-purple-700">
+                                          {chip}
+                                        </span>
+                                        <span className="text-[10px] text-slate-500 truncate block">
+                                          {anim ? `${anim.name} (${anim.location})` : "Ver ficha"}
+                                        </span>
+                                      </div>
+                                      <ArrowRight className="w-3.5 h-3.5 text-slate-300 group-hover:text-purple-600 shrink-0" />
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Sección 2: Registro Cronológico de Modificaciones y Acciones */}
+                          <div className="bg-white border border-slate-200 rounded-3xl p-5 space-y-3 shadow-xs">
+                            <div>
+                              <h4 className="font-black text-slate-900 text-sm flex items-center gap-1.5">
+                                <Activity className="w-4 h-4 text-purple-700" />
+                                Historial de Acciones y Modificaciones Clínicas ({userLogs.length})
+                              </h4>
+                              <p className="text-xs text-slate-500">
+                                Registro inmutable de cada cambio de ubicación, estado, medicación o censo realizado.
+                              </p>
+                            </div>
+
+                            <div className="overflow-x-auto max-h-72 overflow-y-auto border border-slate-200 rounded-2xl">
+                              <table className="w-full text-left text-xs">
+                                <thead className="bg-slate-100 text-slate-700 font-bold uppercase text-[10px] sticky top-0 border-b">
+                                  <tr>
+                                    <th className="p-2.5">Fecha y Hora</th>
+                                    <th className="p-2.5">Acción</th>
+                                    <th className="p-2.5">Microchip / Felino</th>
+                                    <th className="p-2.5">Ubicación</th>
+                                    <th className="p-2.5">Detalles del Cambio</th>
+                                    <th className="p-2.5">Antes / Después</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {userLogs.length === 0 ? (
+                                    <tr>
+                                      <td colSpan={6} className="p-6 text-center text-slate-400">
+                                        Sin registros de auditoría directa para este funcionario aún.
+                                      </td>
+                                    </tr>
+                                  ) : (
+                                    userLogs.slice(0, 60).map((log, idx) => (
+                                      <tr key={idx} className="hover:bg-purple-50/30 transition-all">
+                                        <td className="p-2 font-mono text-[11px] text-slate-600 whitespace-nowrap">
+                                          {new Date(log.timestamp).toLocaleString([], {
+                                            dateStyle: "short",
+                                            timeStyle: "short",
+                                          })}
+                                        </td>
+                                        <td className="p-2">
+                                          <span
+                                            className={`px-2 py-0.5 rounded-full font-black text-[9px] uppercase tracking-wider ${
+                                              log.action === "REGISTRO_ANIMAL"
+                                                ? "bg-purple-100 text-purple-900 border border-purple-300"
+                                                : log.action === "BAJA_FALLECIDO"
+                                                ? "bg-rose-100 text-rose-900 border border-rose-300"
+                                                : log.action === "CAMBIO_UBICACION"
+                                                ? "bg-blue-100 text-blue-900 border border-blue-300"
+                                                : log.action === "FOTO_SUBIDA"
+                                                ? "bg-teal-100 text-teal-900 border border-teal-300"
+                                                : "bg-slate-100 text-slate-800 border border-slate-300"
+                                            }`}
+                                          >
+                                            {log.action}
+                                          </span>
+                                        </td>
+                                        <td className="p-2 font-mono font-bold text-slate-900">
+                                          {log.microchip ? (
+                                            <span
+                                              onClick={() => {
+                                                setAnimalSearch(log.microchip);
+                                                setActiveTab("animals");
+                                              }}
+                                              className="cursor-pointer hover:text-purple-700 underline decoration-purple-300"
+                                            >
+                                              {log.microchip}
+                                            </span>
+                                          ) : (
+                                            "-"
+                                          )}
+                                        </td>
+                                        <td className="p-2">
+                                          <span className="px-1.5 py-0.5 bg-slate-100 text-slate-800 rounded font-semibold text-[10px]">
+                                            {log.location || "-"}
+                                          </span>
+                                        </td>
+                                        <td className="p-2 text-slate-700">{log.details}</td>
+                                        <td className="p-2 text-[10px]">
+                                          {log.previousValue || log.newValue ? (
+                                            <div className="space-y-0.5">
+                                              {log.previousValue && (
+                                                <span className="block text-rose-700 font-mono">
+                                                  - {log.previousValue}
+                                                </span>
+                                              )}
+                                              {log.newValue && (
+                                                <span className="block text-emerald-700 font-mono font-bold">
+                                                  + {log.newValue}
+                                                </span>
+                                              )}
+                                            </div>
+                                          ) : (
+                                            "-"
+                                          )}
+                                        </td>
+                                      </tr>
+                                    ))
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                      );
+                    })()
+                  )}
                 </div>
               )}
 
@@ -2462,7 +2896,39 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
           </div>
         )}
 
+        {/* Modal Vista Previa de Fotografía Ampliada */}
+        {selectedPhotoPreview && (
+          <div
+            className="fixed inset-0 z-[150] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in"
+            onClick={() => setSelectedPhotoPreview(null)}
+          >
+            <div
+              className="relative max-w-lg w-full bg-slate-900 border border-slate-700 rounded-3xl overflow-hidden shadow-2xl p-2 text-center"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-between items-center p-3 border-b border-slate-800 text-white">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-300">Fotografía Oficial</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedPhotoPreview(null)}
+                  className="p-1.5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-all"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-2 flex items-center justify-center max-h-[75vh]">
+                <img
+                  src={selectedPhotoPreview}
+                  alt="Vista previa felino"
+                  className="max-h-[70vh] w-auto max-w-full rounded-2xl object-contain shadow-lg"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
     </div>
   );
 };
+

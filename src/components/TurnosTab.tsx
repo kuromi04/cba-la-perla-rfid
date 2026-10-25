@@ -157,13 +157,28 @@ export const TurnosTab: React.FC<TurnosTabProps> = ({
     loadTasks();
     loadStaffAndPresence();
 
+    const handleSync = () => {
+      loadTasks(true);
+      loadStaffAndPresence();
+    };
+    const handlePresence = () => {
+      loadStaffAndPresence();
+    };
+
+    window.addEventListener("cba_sync_update", handleSync);
+    window.addEventListener("cba_presence_update", handlePresence);
+
     // Polling en segundo plano cada 12 segundos para supervisión en vivo sin recargar
     const timer = setInterval(() => {
       loadTasks(true);
       loadStaffAndPresence();
     }, 12000);
 
-    return () => clearInterval(timer);
+    return () => {
+      window.removeEventListener("cba_sync_update", handleSync);
+      window.removeEventListener("cba_presence_update", handlePresence);
+      clearInterval(timer);
+    };
   }, []);
 
   const handleToggleTask = async (task: ShiftTask) => {

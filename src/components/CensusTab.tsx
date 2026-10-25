@@ -19,6 +19,8 @@ import {
   Sparkles,
   RotateCcw,
   HeartOff,
+  Camera,
+  ZoomIn,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { exportGateraExcel, exportFallecidosExcel } from "@/lib/excelGenerator";
@@ -33,6 +35,7 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
   const [censusList, setCensusList] = useState<CensusRecord[]>([]);
   const [totalAnimals, setTotalAnimals] = useState<number>(0);
   const [totalDeceased, setTotalDeceased] = useState<number>(0);
+  const [selectedPhotoPreview, setSelectedPhotoPreview] = useState<string | null>(null);
   const [deceasedList, setDeceasedList] = useState<Animal[]>([]);
   const [viewMode, setViewMode] = useState<"censo" | "fallecidos">("censo");
   const [searchTerm, setSearchTerm] = useState("");
@@ -137,12 +140,29 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
         a.status?.toLowerCase().trim() === "fallecido"
     );
 
-    // Lecturas activas del censo (excluyendo fallecidos)
-    list = list.filter(
-      (c) =>
-        (c.area === "gatera" || !c.area) &&
-        c.location?.toUpperCase().trim() !== "FALLECIDO"
-    );
+    // Mapa de fotos e información clínica de animales
+    const animalMap = new Map<string, Animal>();
+    for (const a of animalsList) {
+      if (a.microchip) animalMap.set(a.microchip.trim().toUpperCase(), a);
+      if (a.shortChip) animalMap.set(a.shortChip.trim().toUpperCase(), a);
+    }
+
+    // Lecturas activas del censo (excluyendo fallecidos) con foto asociada
+    list = list
+      .filter(
+        (c) =>
+          (c.area === "gatera" || !c.area) &&
+          c.location?.toUpperCase().trim() !== "FALLECIDO"
+      )
+      .map((item) => {
+        const clean = item.microchip.trim().toUpperCase();
+        const short = item.shortChip || (clean.length > 7 ? clean.slice(-7) : clean);
+        const match = animalMap.get(clean) || animalMap.get(short);
+        return {
+          ...item,
+          photoUrl: item.photoUrl || match?.photoUrl,
+        };
+      });
 
     setCensusList(list);
     setDeceasedList(deceasedAnimals);
@@ -152,6 +172,23 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
 
   useEffect(() => {
     loadData();
+
+    const handleSync = () => {
+      loadData();
+    };
+
+    window.addEventListener("cba_sync_update", handleSync);
+    window.addEventListener("cba_presence_update", handleSync);
+
+    const timer = setInterval(() => {
+      loadData();
+    }, 15000);
+
+    return () => {
+      window.removeEventListener("cba_sync_update", handleSync);
+      window.removeEventListener("cba_presence_update", handleSync);
+      clearInterval(timer);
+    };
   }, [currentUser?.area]);
 
   const handleCleanDuplicatesAndDemo = async () => {
@@ -611,14 +648,29 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
                 filteredCensus.map((item) => (
                   <div
                     key={item.id}
-                    className="p-3 bg-slate-50 rounded-2xl flex items-center justify-between border border-slate-200 text-xs"
+                    className="p-3 bg-slate-50 rounded-2xl flex items-center justify-between border border-slate-200 text-xs gap-2.5"
                   >
-                    <div>
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <strong className="text-slate-900">{item.animalName}</strong>
-                        <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-indigo-100 text-indigo-800">
-                          {item.location}
-                        </span>
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      {item.photoUrl ? (
+                        <img
+                          src={item.photoUrl}
+                          alt={item.animalName}
+                          onClick={() => setSelectedPhotoPreview(item.photoUrl!)}
+                          className="w-10 h-10 object-cover rounded-xl border border-purple-300 shadow-2xs shrink-0 cursor-pointer hover:opacity-90 active:scale-95 transition-all"
+                          title="Toca para ver la foto ampliada"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-700 border border-purple-200 flex items-center justify-center font-black text-sm shrink-0">
+                          🐱
+                        </div>
+                      )}
+
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <strong className="text-slate-900 truncate">{item.animalName}</strong>
+                          <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-indigo-100 text-indigo-800">
+                            {item.location}
+                          </span>
                         {item.retroviralStatus && item.retroviralStatus !== "PENDIENTE" && (
                           <span
                             className={`text-[9px] font-black px-1.5 py-0.5 rounded ${
@@ -645,7 +697,8 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
                         Chip: {item.microchip} • Verificado por: {item.scannedBy}
                       </span>
                     </div>
-                    <div className="text-right flex items-center gap-2">
+                  </div>
+                  <div className="text-right flex items-center gap-2">
                       <div>
                         <span className="text-[10px] text-emerald-700 font-bold block">
                           {new Date(item.scannedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -1043,6 +1096,39 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
                   </span>
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Vista Ampliada de Fotografía */}
+      {selectedPhotoPreview && (
+        <div
+          className="fixed inset-0 z-[150] bg-black/85 backdrop-blur-md p-4 flex flex-col items-center justify-center animate-in fade-in cursor-pointer"
+          onClick={() => setSelectedPhotoPreview(null)}
+        >
+          <div
+            className="relative max-w-lg w-full bg-slate-900 rounded-3xl overflow-hidden shadow-2xl border border-purple-500/40 p-2 text-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-2 text-white border-b border-slate-800">
+              <span className="text-xs font-bold flex items-center gap-1 text-purple-300">
+                <Camera className="w-3.5 h-3.5" /> Fotografía Verificada de Expediente
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedPhotoPreview(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-2 flex items-center justify-center">
+              <img
+                src={selectedPhotoPreview}
+                alt="Foto ampliada del felino"
+                className="max-h-[70vh] w-auto max-w-full rounded-2xl object-contain shadow-lg"
+              />
             </div>
           </div>
         </div>

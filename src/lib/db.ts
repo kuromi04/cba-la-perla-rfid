@@ -116,6 +116,7 @@ export interface CensusRecord {
   retroviralStatus?: "NEGATIVO" | "VIF_POSITIVO" | "FELV_POSITIVO" | "DOBLE_POSITIVO" | "PENDIENTE";
   vifStatus?: "POSITIVO" | "NEGATIVO" | "PENDIENTE";
   felvStatus?: "POSITIVO" | "NEGATIVO" | "PENDIENTE";
+  photoUrl?: string;
 }
 
 export interface ShiftTask {
@@ -454,218 +455,244 @@ export async function syncAnimalsBidirectional(): Promise<{ pulled: number; push
 
   try {
     const { fetchAnimalsFromSupabase, getSupabaseClient } = await import("./supabase");
+    const client = getSupabaseClient();
+    if (!client) return { pulled: 0, pushed: 0 };
 
-    const syncWork = async (): Promise<{ pulled: number; pushed: number }> => {
-      const client = getSupabaseClient();
-      if (!client) return { pulled: 0, pushed: 0 };
+    const remoteAnimals = await fetchAnimalsFromSupabase();
+    let pulled = 0;
+    let pushed = 0;
 
-      const remoteAnimals = await fetchAnimalsFromSupabase();
-      let pulled = 0;
-      let pushed = 0;
+    // Cargar todos los animales y gateraRecords locales en memoria para cotejo O(1) ultra-rápido (<50ms)
+    const localAnimals = await db.animals.where("species").equals("gato").toArray();
+    const localGatera = await db.gateraRecords.toArray();
 
-      // 1. Descargar e incorporar novedades remotas a Dexie
-      if (remoteAnimals.length > 0) {
-        for (const remote of remoteAnimals) {
-          const chip = remote.microchip.trim().toUpperCase();
-          const existing = await db.animals.where("microchip").equals(chip).first();
+    const localMap = new Map<string, Animal>();
+    for (const a of localAnimals) {
+      if (a.microchip) localMap.set(a.microchip.trim().toUpperCase(), a);
+      if (a.shortChip) localMap.set(a.shortChip.trim().toUpperCase(), a);
+    }
 
-          if (!existing) {
-            await db.animals.put(remote);
-            await db.gateraRecords.put({
-              nroAnimal: remote.nroAnimal || String((await db.gateraRecords.count()) + 1),
-              microchip: chip,
-              shortChip: remote.shortChip || (chip.length > 7 ? chip.slice(-7) : chip),
-              nombre: remote.name,
-              color: remote.color || "",
-              sexo: (remote.gender === "hembra" ? "hembra" : "macho") as "macho" | "hembra",
-              sexoCode: remote.sexoCode || (remote.gender === "hembra" ? "HFA" : "MFA"),
-              grupoEdad: remote.grupoEdad || "adulto",
-              raza: remote.breed || "DPC",
-              edad: remote.edad || "",
-              tipoIngreso: remote.tipoIngreso || "RES",
-              condicionCorporal: remote.condicionCorporal || "",
-              estadoSalud: remote.estadoSalud || "",
-              ubicacion: remote.location,
-              status: remote.status,
-              fechaFallecimiento: remote.fechaFallecimiento,
-              causaFallecimiento: remote.causaFallecimiento,
-              ubicacionPrevia: remote.ubicacionPrevia,
-              pendientes: remote.notes || "",
-              hc: remote.hc || "",
-              isFeral: remote.isFeral || false,
-              observacionesMedicas: remote.observacionesMedicas || "",
-              medicoVeterinario: remote.medicoVeterinario || "",
-              requiereSeguimiento: remote.requiereSeguimiento || "",
-              tipoSeguimiento: remote.tipoSeguimiento || "TRATAMIENTO",
-              medicacion: remote.notes || "Ninguno",
-              descripcion: remote.name,
-              photoUrl: remote.photoUrl,
-              sistema: "TEGUMEN",
-              fechaFinal: "HNI",
-              tipo: "FS",
-            });
-            pulled++;
-          } else {
-            const isRemoteFallecido =
-              remote.location?.toUpperCase().trim() === "FALLECIDO" ||
-              remote.status?.toLowerCase().trim() === "fallecido";
-            const isLocalFallecido =
-              existing.location?.toUpperCase().trim() === "FALLECIDO" ||
-              existing.status?.toLowerCase().trim() === "fallecido";
+    const gateraMap = new Map<string, GateraCat>();
+    for (const g of localGatera) {
+      if (g.microchip) gateraMap.set(g.microchip.trim().toUpperCase(), g);
+      if (g.shortChip) gateraMap.set(g.shortChip.trim().toUpperCase(), g);
+    }
 
-            const locationChanged = Boolean(remote.location && remote.location !== existing.location);
-            const statusChanged = Boolean(remote.status && remote.status !== existing.status);
-            const colorChanged = Boolean(remote.color && remote.color !== existing.color);
-            const notesChanged = Boolean(remote.notes && remote.notes !== existing.notes);
-            const photoChanged = Boolean(remote.photoUrl && remote.photoUrl !== existing.photoUrl);
-            const retroChanged = Boolean(
-              (remote.retroviralStatus && remote.retroviralStatus !== existing.retroviralStatus) ||
-              (remote.vifStatus && remote.vifStatus !== existing.vifStatus) ||
-              (remote.felvStatus && remote.felvStatus !== existing.felvStatus)
-            );
-            const conditionChanged = Boolean(remote.condicionCorporal && remote.condicionCorporal !== existing.condicionCorporal);
-            const healthChanged = Boolean(remote.estadoSalud && remote.estadoSalud !== existing.estadoSalud);
+    const animalsToSave: Animal[] = [];
+    const gateraToSave: GateraCat[] = [];
 
-            if (
-              locationChanged ||
-              statusChanged ||
-              colorChanged ||
-              notesChanged ||
-              photoChanged ||
-              retroChanged ||
-              conditionChanged ||
-              healthChanged ||
-              (isRemoteFallecido && !isLocalFallecido)
-            ) {
-              if (existing.id) {
-                await db.animals.update(existing.id, {
-                  name: remote.name || existing.name,
-                  location: remote.location || existing.location,
-                  status: remote.status || existing.status,
-                  color: remote.color || existing.color,
-                  photoUrl: remote.photoUrl || existing.photoUrl,
-                  notes: remote.notes || existing.notes,
-                  observacionesMedicas: remote.observacionesMedicas || existing.observacionesMedicas,
-                  retroviralStatus: remote.retroviralStatus || existing.retroviralStatus,
-                  vifStatus: remote.vifStatus || existing.vifStatus,
-                  felvStatus: remote.felvStatus || existing.felvStatus,
-                  condicionCorporal: remote.condicionCorporal || existing.condicionCorporal,
-                  estadoSalud: remote.estadoSalud || existing.estadoSalud,
-                  medicoVeterinario: remote.medicoVeterinario || existing.medicoVeterinario,
-                  fechaFallecimiento: remote.fechaFallecimiento,
-                  causaFallecimiento: remote.causaFallecimiento,
-                  ubicacionPrevia: remote.ubicacionPrevia || existing.location,
-                  lastCensusDate: remote.lastCensusDate,
-                  updatedAt: remote.updatedAt || new Date().toISOString(),
-                  updatedBy: remote.updatedBy,
-                });
-              }
+    // 1. Descargar e incorporar novedades remotas a Dexie
+    if (remoteAnimals && remoteAnimals.length > 0) {
+      let gateraCount = localGatera.length;
 
-              const gRec = await db.gateraRecords.where("microchip").equals(chip).first();
-              if (gRec?.id) {
-                await db.gateraRecords.update(gRec.id, {
-                  nombre: remote.name || gRec.nombre,
-                  ubicacion: remote.location || gRec.ubicacion,
-                  status: remote.status || gRec.status,
-                  color: remote.color || gRec.color,
-                  photoUrl: remote.photoUrl || gRec.photoUrl,
-                  condicionCorporal: remote.condicionCorporal || gRec.condicionCorporal,
-                  estadoSalud: remote.estadoSalud || gRec.estadoSalud,
-                  medicacion: remote.notes || gRec.medicacion,
-                  observacionesMedicas: remote.observacionesMedicas || gRec.observacionesMedicas,
-                  medicoVeterinario: remote.medicoVeterinario || gRec.medicoVeterinario,
-                  fechaFallecimiento: remote.fechaFallecimiento,
-                  causaFallecimiento: remote.causaFallecimiento,
-                  ubicacionPrevia: remote.ubicacionPrevia || gRec.ubicacion,
-                });
-              }
+      for (const remote of remoteAnimals) {
+        const chip = remote.microchip.trim().toUpperCase();
+        const shortChip = remote.shortChip || (chip.length > 7 ? chip.slice(-7) : chip);
+        const existing = localMap.get(chip) || localMap.get(shortChip);
+        const existingGatera = gateraMap.get(chip) || gateraMap.get(shortChip);
 
-              if (isRemoteFallecido) {
-                const cRecs = await db.census.where("microchip").equals(chip).toArray();
-                for (const c of cRecs) if (c.id) await db.census.delete(c.id);
-                await db.shiftTasks.where("microchip").equals(chip).delete();
-              } else if (locationChanged) {
-                const cRecs = await db.census.where("microchip").equals(chip).toArray();
-                for (const c of cRecs) {
-                  if (c.id) await db.census.update(c.id, { location: remote.location });
-                }
-                const tasks = await db.shiftTasks.where("microchip").equals(chip).toArray();
-                for (const t of tasks) {
-                  if (t.id) await db.shiftTasks.update(t.id, { location: remote.location });
-                }
-              }
-
-              pulled++;
-            }
-          }
-        }
-      }
-
-      // 2. Subida en lotes rápidos (batches de 50) de animales locales que falten en Supabase
-      const localAnimals = await db.animals.where("species").equals("gato").toArray();
-      const remoteChips = new Set(remoteAnimals.map((r) => r.microchip.trim().toUpperCase()));
-      const toPush = localAnimals.filter((local) => !remoteChips.has(local.microchip.trim().toUpperCase()));
-
-      if (toPush.length > 0) {
-        const chunkSize = 50;
-        for (let i = 0; i < toPush.length; i += chunkSize) {
-          const chunk = toPush.slice(i, i + chunkSize);
-          const rows = chunk.map((a) => {
-            const isFallecido =
-              a.location?.toUpperCase().trim() === "FALLECIDO" ||
-              a.status?.toLowerCase().trim() === "fallecido";
-            return {
-              microchip: a.microchip,
-              name: a.name || `Felino ${a.microchip.slice(-4)}`,
-              species: "gato",
-              breed: a.breed || "DPC",
-              sex: a.sexoCode?.startsWith("H") ? "hembra" : "macho",
-              status: isFallecido ? "fallecido" : (a.status || "activo"),
-              photo_url: a.photoUrl || null,
-              notes: a.notes || a.observacionesMedicas,
-              retroviral_status: a.retroviralStatus || null,
-              vif_status: a.vifStatus || null,
-              felv_status: a.felvStatus || null,
-              attributes: {
-                shortChip: a.shortChip,
-                hc: a.hc,
-                isFeral: a.isFeral,
-                location: a.location,
-                color: a.color,
-                photoUrl: a.photoUrl || null,
-                condicionCorporal: a.condicionCorporal,
-                estadoSalud: a.estadoSalud,
-                tipoIngreso: a.tipoIngreso,
-                edad: a.edad,
-                medicoVeterinario: a.medicoVeterinario,
-                lastCensusDate: a.lastCensusDate,
-                retroviralStatus: a.retroviralStatus,
-                vifStatus: a.vifStatus,
-                felvStatus: a.felvStatus,
-                fechaFallecimiento: a.fechaFallecimiento,
-                causaFallecimiento: a.causaFallecimiento,
-                ubicacionPrevia: a.ubicacionPrevia,
-              },
-              updated_at: new Date().toISOString(),
-            };
+        if (!existing) {
+          animalsToSave.push(remote);
+          gateraCount++;
+          gateraToSave.push({
+            nroAnimal: remote.nroAnimal || String(gateraCount),
+            microchip: chip,
+            shortChip,
+            nombre: remote.name,
+            color: remote.color || "",
+            sexo: (remote.gender === "hembra" ? "hembra" : "macho") as "macho" | "hembra",
+            sexoCode: remote.sexoCode || (remote.gender === "hembra" ? "HFA" : "MFA"),
+            grupoEdad: remote.grupoEdad || "adulto",
+            raza: remote.breed || "DPC",
+            edad: remote.edad || "",
+            tipoIngreso: remote.tipoIngreso || "RES",
+            condicionCorporal: remote.condicionCorporal || "",
+            estadoSalud: remote.estadoSalud || "",
+            ubicacion: remote.location,
+            status: remote.status,
+            fechaFallecimiento: remote.fechaFallecimiento,
+            causaFallecimiento: remote.causaFallecimiento,
+            ubicacionPrevia: remote.ubicacionPrevia,
+            pendientes: remote.notes || "",
+            hc: remote.hc || "",
+            isFeral: remote.isFeral || false,
+            observacionesMedicas: remote.observacionesMedicas || "",
+            medicoVeterinario: remote.medicoVeterinario || "",
+            requiereSeguimiento: remote.requiereSeguimiento || "",
+            tipoSeguimiento: remote.tipoSeguimiento || "TRATAMIENTO",
+            medicacion: remote.notes || "Ninguno",
+            descripcion: remote.name,
+            photoUrl: remote.photoUrl,
+            sistema: "TEGUMEN",
+            fechaFinal: "HNI",
+            tipo: "FS",
           });
+          pulled++;
+        } else {
+          const isRemoteFallecido =
+            remote.location?.toUpperCase().trim() === "FALLECIDO" ||
+            remote.status?.toLowerCase().trim() === "fallecido";
+          const isLocalFallecido =
+            existing.location?.toUpperCase().trim() === "FALLECIDO" ||
+            existing.status?.toLowerCase().trim() === "fallecido";
 
-          const { error } = await client.from("animals").upsert(rows, { onConflict: "microchip" });
-          if (!error) {
-            pushed += chunk.length;
+          const locationChanged = Boolean(remote.location && remote.location !== existing.location);
+          const statusChanged = Boolean(remote.status && remote.status !== existing.status);
+          const colorChanged = Boolean(remote.color && remote.color !== existing.color);
+          const notesChanged = Boolean(remote.notes && remote.notes !== existing.notes);
+          const photoChanged = Boolean(remote.photoUrl && remote.photoUrl !== existing.photoUrl);
+          const retroChanged = Boolean(
+            (remote.retroviralStatus && remote.retroviralStatus !== existing.retroviralStatus) ||
+            (remote.vifStatus && remote.vifStatus !== existing.vifStatus) ||
+            (remote.felvStatus && remote.felvStatus !== existing.felvStatus)
+          );
+          const conditionChanged = Boolean(remote.condicionCorporal && remote.condicionCorporal !== existing.condicionCorporal);
+          const healthChanged = Boolean(remote.estadoSalud && remote.estadoSalud !== existing.estadoSalud);
+
+          if (
+            locationChanged ||
+            statusChanged ||
+            colorChanged ||
+            notesChanged ||
+            photoChanged ||
+            retroChanged ||
+            conditionChanged ||
+            healthChanged ||
+            (isRemoteFallecido && !isLocalFallecido)
+          ) {
+            // Garantizar que la foto nunca se pierda
+            const resolvedPhoto = remote.photoUrl || existing.photoUrl || existingGatera?.photoUrl;
+
+            animalsToSave.push({
+              ...existing,
+              ...remote,
+              id: existing.id,
+              name: remote.name || existing.name,
+              location: remote.location || existing.location,
+              status: remote.status || existing.status,
+              color: remote.color || existing.color,
+              photoUrl: resolvedPhoto,
+              notes: remote.notes || existing.notes,
+              observacionesMedicas: remote.observacionesMedicas || existing.observacionesMedicas,
+              retroviralStatus: remote.retroviralStatus || existing.retroviralStatus,
+              vifStatus: remote.vifStatus || existing.vifStatus,
+              felvStatus: remote.felvStatus || existing.felvStatus,
+              condicionCorporal: remote.condicionCorporal || existing.condicionCorporal,
+              estadoSalud: remote.estadoSalud || existing.estadoSalud,
+              medicoVeterinario: remote.medicoVeterinario || existing.medicoVeterinario,
+              fechaFallecimiento: remote.fechaFallecimiento || existing.fechaFallecimiento,
+              causaFallecimiento: remote.causaFallecimiento || existing.causaFallecimiento,
+              ubicacionPrevia: remote.ubicacionPrevia || existing.ubicacionPrevia,
+              lastCensusDate: remote.lastCensusDate || existing.lastCensusDate,
+              updatedAt: remote.updatedAt || new Date().toISOString(),
+              updatedBy: remote.updatedBy || existing.updatedBy,
+              createdBy: existing.createdBy || remote.createdBy,
+              createdById: existing.createdById || remote.createdById,
+            });
+
+            if (existingGatera) {
+              gateraToSave.push({
+                ...existingGatera,
+                nombre: remote.name || existingGatera.nombre,
+                ubicacion: remote.location || existingGatera.ubicacion,
+                status: remote.status || existingGatera.status,
+                color: remote.color || existingGatera.color,
+                photoUrl: resolvedPhoto,
+                condicionCorporal: remote.condicionCorporal || existingGatera.condicionCorporal,
+                estadoSalud: remote.estadoSalud || existingGatera.estadoSalud,
+                medicacion: remote.notes || existingGatera.medicacion,
+                observacionesMedicas: remote.observacionesMedicas || existingGatera.observacionesMedicas,
+                medicoVeterinario: remote.medicoVeterinario || existingGatera.medicoVeterinario,
+                fechaFallecimiento: remote.fechaFallecimiento || existingGatera.fechaFallecimiento,
+                causaFallecimiento: remote.causaFallecimiento || existingGatera.causaFallecimiento,
+                ubicacionPrevia: remote.ubicacionPrevia || existingGatera.ubicacionPrevia,
+              });
+            }
+
+            if (isRemoteFallecido) {
+              db.census.where("microchip").equals(chip).delete().catch(() => {});
+              db.shiftTasks.where("microchip").equals(chip).delete().catch(() => {});
+            } else if (locationChanged) {
+              db.census.where("microchip").equals(chip).modify({ location: remote.location }).catch(() => {});
+              db.shiftTasks.where("microchip").equals(chip).modify({ location: remote.location }).catch(() => {});
+            }
+
+            pulled++;
           }
         }
       }
+    }
 
-      return { pulled, pushed };
-    };
+    // Guardar en lotes de una sola transacción (inmensamente más rápido que iterar uno a uno)
+    if (animalsToSave.length > 0) {
+      await db.animals.bulkPut(animalsToSave);
+    }
+    if (gateraToSave.length > 0) {
+      await db.gateraRecords.bulkPut(gateraToSave);
+    }
 
-    // Temporizador de seguridad de 8 segundos máximo para que nunca bloquee
-    const timeout = new Promise<{ pulled: number; pushed: number }>((resolve) =>
-      setTimeout(() => resolve({ pulled: 0, pushed: 0 }), 8000)
-    );
+    // 2. Subida en lotes rápidos (batches de 50) de animales locales que falten en Supabase
+    const remoteChips = new Set(remoteAnimals.map((r) => r.microchip.trim().toUpperCase()));
+    const toPush = localAnimals.filter((local) => !remoteChips.has(local.microchip.trim().toUpperCase()));
 
-    return await Promise.race([syncWork(), timeout]);
+    if (toPush.length > 0) {
+      const chunkSize = 50;
+      for (let i = 0; i < toPush.length; i += chunkSize) {
+        const chunk = toPush.slice(i, i + chunkSize);
+        const rows = chunk.map((a) => {
+          const isFallecido =
+            a.location?.toUpperCase().trim() === "FALLECIDO" ||
+            a.status?.toLowerCase().trim() === "fallecido";
+          return {
+            microchip: a.microchip,
+            name: a.name || `Felino ${a.microchip.slice(-4)}`,
+            species: "gato",
+            breed: a.breed || "DPC",
+            sex: a.sexoCode?.startsWith("H") ? "hembra" : "macho",
+            status: isFallecido ? "fallecido" : (a.status || "activo"),
+            photo_url: a.photoUrl || null,
+            notes: a.notes || a.observacionesMedicas,
+            retroviral_status: a.retroviralStatus || null,
+            vif_status: a.vifStatus || null,
+            felv_status: a.felvStatus || null,
+            attributes: {
+              shortChip: a.shortChip,
+              hc: a.hc,
+              isFeral: a.isFeral,
+              location: a.location,
+              color: a.color,
+              photoUrl: a.photoUrl || null,
+              condicionCorporal: a.condicionCorporal,
+              estadoSalud: a.estadoSalud,
+              tipoIngreso: a.tipoIngreso,
+              edad: a.edad,
+              medicoVeterinario: a.medicoVeterinario,
+              lastCensusDate: a.lastCensusDate,
+              retroviralStatus: a.retroviralStatus,
+              vifStatus: a.vifStatus,
+              felvStatus: a.felvStatus,
+              fechaFallecimiento: a.fechaFallecimiento,
+              causaFallecimiento: a.causaFallecimiento,
+              ubicacionPrevia: a.ubicacionPrevia,
+              createdBy: a.createdBy,
+              createdById: a.createdById,
+              createdAt: a.createdAt,
+              updatedBy: a.updatedBy,
+              updatedById: a.updatedById,
+              updatedAt: a.updatedAt,
+            },
+            updated_at: new Date().toISOString(),
+          };
+        });
+
+        const { error } = await client.from("animals").upsert(rows, { onConflict: "microchip" });
+        if (!error) {
+          pushed += chunk.length;
+        }
+      }
+    }
+
+    return { pulled, pushed };
   } catch (err) {
     console.warn("syncAnimalsBidirectional error:", err);
     return { pulled: 0, pushed: 0 };
@@ -674,36 +701,43 @@ export async function syncAnimalsBidirectional(): Promise<{ pulled: number; push
   }
 }
 
-// Búsqueda inteligente por chip completo, chip corto, HC, nombre o ubicación
+// Búsqueda inteligente por chip completo, chip corto, HC, sufijo, nombre o ubicación
 export async function searchAnimalSmart(query: string): Promise<Animal | null> {
   const clean = query.trim().toUpperCase();
   if (!clean) return null;
 
+  const last7 = clean.length >= 7 ? clean.slice(-7) : clean;
+
   // 1. Coincidencia exacta por microchip completo
   let animal = await db.animals.where("microchip").equals(clean).first();
-  if (animal) return animal;
 
-  // 2. Coincidencia exacta por shortChip
-  animal = await db.animals.where("shortChip").equals(clean).first();
-  if (animal) return animal;
+  // 2. Coincidencia exacta o por últimos 7 dígitos de shortChip
+  if (!animal) {
+    animal = await db.animals.where("shortChip").equals(clean).first();
+  }
+  if (!animal && last7) {
+    animal = await db.animals.where("shortChip").equals(last7).first();
+  }
 
   // 3. Coincidencia por Historia Clínica (HC)
-  animal = await db.animals.where("hc").equals(clean).first();
-  if (animal) return animal;
+  if (!animal) {
+    animal = await db.animals.where("hc").equals(clean).first();
+  }
 
-  // 4. Búsqueda en GateraRecords directo
+  // 4. Búsqueda en GateraRecords directo (tolerante a chips cortos y formatos FDX-B / Hex)
   const cat = await db.gateraRecords
     .filter(
       (c) =>
         c.microchip === clean ||
         c.shortChip === clean ||
         c.hc === clean ||
-        c.microchip.endsWith(clean)
+        (Boolean(last7) && (c.shortChip === last7 || c.microchip.endsWith(last7) || clean.endsWith(c.microchip)))
     )
     .first();
 
-  if (cat) {
-    return {
+  if (!animal && cat) {
+    animal = {
+      id: cat.id,
       microchip: cat.microchip,
       shortChip: cat.shortChip,
       name: cat.color ? `FELINO ${cat.color}` : (cat.nombre || "FELINO"),
@@ -711,30 +745,56 @@ export async function searchAnimalSmart(query: string): Promise<Animal | null> {
       breed: cat.raza || "DPC",
       gender: cat.sexo,
       location: cat.ubicacion,
-      status: "activo",
+      status: cat.status || "activo",
       notes: `${cat.pendientes || ""}. HC: ${cat.hc || ""}`,
       hc: cat.hc,
       isFeral: cat.isFeral,
       color: cat.color,
+      photoUrl: cat.photoUrl,
+      condicionCorporal: cat.condicionCorporal,
+      estadoSalud: cat.estadoSalud,
+      medicoVeterinario: cat.medicoVeterinario,
     };
   }
+
+  // Si se encontró el animal pero no tiene foto, verificar si gateraRecords sí la tiene
+  if (animal && !animal.photoUrl) {
+    const chipToFind = animal.microchip;
+    const gRec = await db.gateraRecords
+      .filter((g) => g.microchip === chipToFind || (Boolean(animal!.shortChip) && g.shortChip === animal!.shortChip))
+      .first();
+    if (gRec?.photoUrl) {
+      animal.photoUrl = gRec.photoUrl;
+      if (animal.id) {
+        db.animals.update(animal.id, { photoUrl: gRec.photoUrl }).catch(() => {});
+      }
+    }
+  }
+
+  if (animal) return animal;
 
   // 5. Sufijo en animales generales
   const all = await db.animals.toArray();
   const bySuffix = all.find(
     (a) =>
       a.microchip.endsWith(clean) ||
-      (a.shortChip && a.shortChip.endsWith(clean)) ||
+      clean.endsWith(a.microchip) ||
+      (Boolean(last7) && (a.shortChip === last7 || a.microchip.endsWith(last7) || clean.endsWith(a.shortChip || ""))) ||
       (a.hc && a.hc === clean)
   );
-  if (bySuffix) return bySuffix;
+  if (bySuffix) {
+    if (!bySuffix.photoUrl && cat?.photoUrl) {
+      bySuffix.photoUrl = cat.photoUrl;
+    }
+    return bySuffix;
+  }
 
   // 6. Búsqueda por nombre o canil
   const byName = all.find(
     (a) =>
-      a.name.toUpperCase().includes(clean) ||
-      a.breed.toUpperCase().includes(clean) ||
-      a.location.toUpperCase().includes(clean)
+      Boolean(a.name && a.name.toUpperCase().includes(clean)) ||
+      Boolean(a.breed && a.breed.toUpperCase().includes(clean)) ||
+      Boolean(a.location && a.location.toUpperCase().includes(clean))
   );
   if (byName) return byName;
 

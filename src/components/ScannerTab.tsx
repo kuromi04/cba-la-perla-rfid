@@ -144,6 +144,29 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
             found.photoUrl = catRecord.photoUrl;
             setCurrentAnimal({ ...found, photoUrl: catRecord.photoUrl });
           }
+        }
+
+        // Si el felino no tiene foto en la base local, verificar en Supabase Cloud si otro dispositivo la subió
+        if (!found.photoUrl && typeof window !== "undefined" && navigator.onLine) {
+          import("@/lib/supabase").then(async ({ getSupabaseClient }) => {
+            const client = getSupabaseClient();
+            if (!client) return;
+            const { data } = await client
+              .from("animals")
+              .select("photo_url, attributes")
+              .eq("microchip", found.microchip)
+              .maybeSingle();
+            const remotePhoto = data?.photo_url || data?.attributes?.photoUrl;
+            if (remotePhoto) {
+              found.photoUrl = remotePhoto;
+              setCurrentAnimal((prev) => (prev ? { ...prev, photoUrl: remotePhoto } : prev));
+              if (found.id) db.animals.update(found.id, { photoUrl: remotePhoto }).catch(() => {});
+              db.gateraRecords.where("microchip").equals(found.microchip).modify({ photoUrl: remotePhoto }).catch(() => {});
+            }
+          }).catch(() => {});
+        }
+
+        if (catRecord) {
           setShelterEntries([
             {
               ubicacion: catRecord.ubicacion,
@@ -619,11 +642,11 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
         user: currentUser,
       }).catch(console.warn);
 
-      // 3. Sincronizar en Supabase (elimina en la nube pasando null)
+      // 3. Sincronizar en Supabase (elimina en la nube pasando deletePhoto: true)
       if (typeof window !== "undefined" && navigator.onLine) {
         try {
           const { syncAnimalToSupabase } = await import("@/lib/supabase");
-          syncAnimalToSupabase(updated).catch(console.warn);
+          syncAnimalToSupabase({ ...updated, deletePhoto: true }).catch(console.warn);
         } catch {}
       }
 
