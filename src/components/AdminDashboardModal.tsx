@@ -5,6 +5,7 @@ import {
   getAllStaff,
   getFieldStaff,
   updateStaffPin,
+  updateStaffMember,
   deleteStaffMember,
   registerStaffMember,
   verifyAdminKey,
@@ -131,9 +132,18 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     notes: "",
   });
 
-  // Estado para reset de PIN
+  // Estado para reset y edición de personal
   const [resetPinUserId, setResetPinUserId] = useState<string | null>(null);
   const [newPinValue, setNewPinValue] = useState("");
+  const [editingStaffMember, setEditingStaffMember] = useState<StaffMember | null>(null);
+  const [editStaffForm, setEditStaffForm] = useState({
+    name: "",
+    role: "veterinario" as "veterinario" | "auxiliar" | "operario",
+    specialty: "",
+    email: "",
+    phone: "",
+    pin: "",
+  });
 
   const restoreFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -620,6 +630,51 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     setFeedback(`🗑️ Usuario ${name} eliminado.`);
     await refreshAllData();
     setTimeout(() => setFeedback(null), 3000);
+  };
+
+  const handleStartEditStaff = (staff: StaffMember) => {
+    setEditingStaffMember(staff);
+    setEditStaffForm({
+      name: staff.name,
+      role: staff.role === "admin" ? "veterinario" : staff.role,
+      specialty: staff.specialty || "",
+      email: staff.email || "",
+      phone: staff.phone || "",
+      pin: staff.pin || "",
+    });
+  };
+
+  const handleSaveStaffEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingStaffMember || !editStaffForm.name.trim()) return;
+
+    if (editStaffForm.pin.trim() && editStaffForm.pin.trim().length < 4) {
+      alert("El PIN debe tener al menos 4 dígitos numéricos.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const updated = await updateStaffMember(editingStaffMember.id, {
+        name: editStaffForm.name.trim(),
+        role: editStaffForm.role,
+        specialty: editStaffForm.specialty.trim() || undefined,
+        email: editStaffForm.email.trim() || undefined,
+        phone: editStaffForm.phone.trim() || undefined,
+        pin: editStaffForm.pin.trim() || undefined,
+      });
+
+      if (updated) {
+        setFeedback(`✅ Funcionario ${updated.name} actualizado con éxito.`);
+        setEditingStaffMember(null);
+        await refreshAllData();
+        setTimeout(() => setFeedback(null), 3000);
+      }
+    } catch (err: any) {
+      alert("Error al actualizar funcionario: " + (err?.message || err));
+    } finally {
+      setLoading(false);
+    }
   };
 
   // --- BACKUP Y RESTAURACIÓN DEL SISTEMA ---
@@ -2057,6 +2112,105 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                     </div>
                   )}
 
+                  {/* Formulario Editar Funcionario */}
+                  {editingStaffMember && (
+                    <div className="p-4 bg-purple-50/90 border border-purple-300 rounded-2xl animate-in fade-in space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h5 className="font-black text-xs text-purple-950 uppercase flex items-center gap-1.5">
+                          <Edit3 className="w-4 h-4 text-purple-700" />
+                          Modificar Funcionario: {editingStaffMember.name}
+                        </h5>
+                        <button
+                          type="button"
+                          onClick={() => setEditingStaffMember(null)}
+                          className="text-slate-400 hover:text-slate-700"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <form onSubmit={handleSaveStaffEdit} className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">Nombre Completo: *</label>
+                          <input
+                            type="text"
+                            required
+                            value={editStaffForm.name}
+                            onChange={(e) => setEditStaffForm({ ...editStaffForm, name: e.target.value })}
+                            className="w-full p-2 bg-white border rounded-xl font-bold"
+                          />
+                        </div>
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">Rol Asignado: *</label>
+                          <select
+                            value={editStaffForm.role}
+                            onChange={(e) => setEditStaffForm({ ...editStaffForm, role: e.target.value as any })}
+                            className="w-full p-2 bg-white border rounded-xl font-bold"
+                          >
+                            <option value="veterinario">Médico Veterinario</option>
+                            <option value="auxiliar">Auxiliar Veterinario</option>
+                            <option value="operario">Operario de Albergue</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">PIN Personal (Opcional):</label>
+                          <input
+                            type="password"
+                            maxLength={6}
+                            placeholder="Ej. 1234"
+                            value={editStaffForm.pin}
+                            onChange={(e) => setEditStaffForm({ ...editStaffForm, pin: e.target.value })}
+                            className="w-full p-2 bg-white border rounded-xl font-mono text-center font-bold"
+                          />
+                        </div>
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">Especialidad / Cargo:</label>
+                          <input
+                            type="text"
+                            value={editStaffForm.specialty}
+                            onChange={(e) => setEditStaffForm({ ...editStaffForm, specialty: e.target.value })}
+                            className="w-full p-2 bg-white border rounded-xl"
+                          />
+                        </div>
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">Correo Institucional:</label>
+                          <input
+                            type="email"
+                            value={editStaffForm.email}
+                            onChange={(e) => setEditStaffForm({ ...editStaffForm, email: e.target.value })}
+                            className="w-full p-2 bg-white border rounded-xl"
+                          />
+                        </div>
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">Teléfono:</label>
+                          <input
+                            type="tel"
+                            value={editStaffForm.phone}
+                            onChange={(e) => setEditStaffForm({ ...editStaffForm, phone: e.target.value })}
+                            className="w-full p-2 bg-white border rounded-xl"
+                          />
+                        </div>
+                        <div className="sm:col-span-3 flex items-center justify-end gap-2 pt-2">
+                          <button
+                            type="button"
+                            onClick={() => setEditingStaffMember(null)}
+                            className="px-3 py-2 bg-slate-200 text-slate-700 rounded-xl font-bold"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={loading}
+                            className="px-4 py-2 bg-purple-700 hover:bg-purple-800 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-1.5"
+                          >
+                            <Save className="w-3.5 h-3.5" />
+                            <span>Guardar Modificaciones</span>
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  )}
+
                   <div className="space-y-2">
                     {staffList.map((staff) => (
                       <div
@@ -2120,6 +2274,15 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                               <span>{staff.pin ? "Cambiar PIN" : "Asignar PIN"}</span>
                             </button>
                           )}
+
+                          <button
+                            type="button"
+                            onClick={() => handleStartEditStaff(staff)}
+                            className="p-1.5 text-purple-700 hover:text-purple-900 hover:bg-purple-50 rounded-xl transition-all"
+                            title="Editar datos completos del funcionario"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
 
                           <button
                             type="button"

@@ -281,6 +281,82 @@ export async function registerStaffMember(data: {
 }
 
 /**
+ * Actualizar datos de un empleado (Nombre, Rol, Especialidad, Correo, Teléfono, PIN)
+ */
+export async function updateStaffMember(
+  id: string,
+  updates: Partial<Omit<StaffMember, "id" | "token">>
+): Promise<StaffMember | null> {
+  try {
+    const existing = await db.staff.get(id);
+
+    const assignedRole =
+      id === MASTER_ADMIN.id
+        ? "admin"
+        : updates.role === "admin"
+        ? "veterinario"
+        : updates.role || existing?.role || "veterinario";
+
+    const avatarColor =
+      AVATAR_COLORS[assignedRole] || existing?.avatarColor || "bg-slate-700 text-white";
+
+    const updated: StaffMember = {
+      ...(existing || {
+        id,
+        name: "",
+        area: "gatera" as const,
+        token: generateMagicToken(updates.name || "user", assignedRole),
+        avatarColor,
+      }),
+      ...updates,
+      id,
+      role: assignedRole,
+      avatarColor,
+      area: "gatera" as const,
+    };
+
+    if (updates.name) updated.name = updates.name.trim();
+    if (updates.email !== undefined) updated.email = updates.email?.trim() || undefined;
+    if (updates.pin !== undefined) updated.pin = updates.pin?.trim() || undefined;
+    if (updates.phone !== undefined) updated.phone = updates.phone?.trim() || undefined;
+    if (updates.specialty !== undefined) updated.specialty = updates.specialty?.trim() || undefined;
+
+    // 1. Guardar en Dexie
+    await db.staff.put(updated);
+
+    // 2. Sincronizar en Supabase
+    if (typeof window !== "undefined" && navigator.onLine) {
+      try {
+        const { syncStaffToSupabase } = await import("./supabase");
+        await syncStaffToSupabase(updated);
+      } catch (err) {
+        console.warn("Error syncing updated staff to Supabase:", err);
+      }
+    }
+
+    // 3. Sincronizar en localStorage y propagar cambios de sesión activa
+    if (typeof window !== "undefined") {
+      try {
+        const current = await getAllStaff();
+        const nextList = current.map((s) => (s.id === id ? updated : s));
+        if (!nextList.some((s) => s.id === id)) nextList.push(updated);
+        localStorage.setItem("cba_laperla_staff_list", JSON.stringify(nextList));
+
+        const activeUserId = localStorage.getItem("cba_laperla_active_user");
+        if (activeUserId === id) {
+          window.dispatchEvent(new CustomEvent("cba_active_user_updated", { detail: updated }));
+        }
+      } catch {}
+    }
+
+    return updated;
+  } catch (err) {
+    console.error("Error updating staff member:", err);
+    return null;
+  }
+}
+
+/**
  * Eliminar un empleado (Protege al Administrador Maestro contra eliminación)
  */
 export async function deleteStaffMember(id: string): Promise<void> {
@@ -289,11 +365,7 @@ export async function deleteStaffMember(id: string): Promise<void> {
     return;
   }
 
-  try {
-    await db.staff.delete(id);
-  } catch {}
-
-  // Eliminar en Supabase en la nube
+  // 1. Eliminar primero en Supabase en la nube (con borrado previo de presencia para Foreign Key)
   if (typeof window !== "undefined" && navigator.onLine) {
     try {
       const { deleteStaffFromSupabase } = await import("./supabase");
@@ -303,11 +375,23 @@ export async function deleteStaffMember(id: string): Promise<void> {
     }
   }
 
+  // 2. Eliminar en Dexie local
+  try {
+    await db.staff.delete(id);
+  } catch {}
+
+  // 3. Eliminar en localStorage y limpiar sesión si era el usuario actual
   if (typeof window !== "undefined") {
     try {
       const current = await getAllStaff();
       const filtered = current.filter((s) => s.id !== id);
       localStorage.setItem("cba_laperla_staff_list", JSON.stringify(filtered));
+
+      const activeUserId = localStorage.getItem("cba_laperla_active_user");
+      if (activeUserId === id) {
+        localStorage.removeItem("cba_laperla_active_user");
+        window.dispatchEvent(new CustomEvent("cba_active_user_deleted", { detail: id }));
+      }
     } catch {}
   }
 }

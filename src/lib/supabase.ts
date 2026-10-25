@@ -224,19 +224,26 @@ export async function fetchStaffFromSupabase(): Promise<StaffMember[]> {
 /**
  * Eliminar personal de Supabase
  */
-export async function deleteStaffFromSupabase(id: string): Promise<void> {
+export async function deleteStaffFromSupabase(id: string): Promise<boolean> {
   const client = getSupabaseClient();
-  if (!client) return;
+  if (!client || !id) return false;
 
   try {
-    await client.from("staff").delete().eq("id", id);
+    // 1. Eliminar primero de staff_presence para evitar violación de Foreign Key constraint
     await client.from("staff_presence").delete().eq("staff_id", id);
+    // 2. Eliminar de la tabla staff
+    const { error } = await client.from("staff").delete().eq("id", id);
+    if (error) {
+      console.warn("Error deleting staff from Supabase:", error.message);
+      return false;
+    }
+    return true;
   } catch (err) {
     console.warn("Error deleting staff from Supabase:", err);
+    return false;
   }
 }
 
-/**
 /**
  * Detectar tipo de dispositivo de forma amigable (PC vs Móvil / Tablet)
  */
@@ -269,9 +276,15 @@ export async function recordStaffPresence(member: StaffMember): Promise<void> {
       device_info: getHumanReadableDevice(),
     };
 
-    await client
+    let { error } = await client
       .from("staff_presence")
       .upsert(payload, { onConflict: "staff_id" });
+
+    // Si falló por foreign key (código 23503), asegurar que el usuario existe en staff y reintentar
+    if (error && (error.code === "23503" || error.message?.includes("foreign key") || error.message?.includes("violates"))) {
+      await syncStaffToSupabase(member);
+      await client.from("staff_presence").upsert(payload, { onConflict: "staff_id" });
+    }
   } catch (err) {
     // Fail silently
   }

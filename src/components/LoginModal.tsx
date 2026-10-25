@@ -4,6 +4,7 @@ import {
   StaffMember,
   getFieldStaff,
   registerStaffMember,
+  updateStaffMember,
   deleteStaffMember,
   verifyUserPin,
 } from "@/lib/staff";
@@ -22,6 +23,8 @@ import {
   KeyRound,
   ArrowRight,
   AlertTriangle,
+  Edit2,
+  Save,
 } from "lucide-react";
 
 interface LoginModalProps {
@@ -81,6 +84,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       refreshStaff();
       setFeedback(null);
       setStaffPendingPin(null);
+      setEditingMember(null);
       setEnteredPin("");
       setPinError(null);
     }
@@ -153,6 +157,60 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     }, 1200);
   };
 
+  const [editingMember, setEditingMember] = useState<StaffMember | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editRole, setEditRole] = useState<"veterinario" | "auxiliar" | "operario">("veterinario");
+  const [editSpecialty, setEditSpecialty] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editPin, setEditPin] = useState("");
+
+  const handleStartEdit = (member: StaffMember) => {
+    setEditingMember(member);
+    setEditName(member.name);
+    setEditRole(member.role === "admin" ? "veterinario" : member.role);
+    setEditSpecialty(member.specialty || "");
+    setEditEmail(member.email || "");
+    setEditPhone(member.phone || "");
+    setEditPin(member.pin || "");
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingMember || !editName.trim()) return;
+
+    if (editPin.trim() && editPin.trim().length < 4) {
+      alert("El PIN personal debe tener al menos 4 dígitos numéricos.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const updated = await updateStaffMember(editingMember.id, {
+        name: editName.trim(),
+        role: editRole,
+        specialty: editSpecialty.trim() || undefined,
+        email: editEmail.trim() || undefined,
+        phone: editPhone.trim() || undefined,
+        pin: editPin.trim() || undefined,
+      });
+
+      if (updated) {
+        setFeedback(`✅ Datos de ${updated.name} actualizados.`);
+        if (currentUser?.id === updated.id) {
+          onSelectUser(updated);
+        }
+        setEditingMember(null);
+        await refreshStaff();
+        setTimeout(() => setFeedback(null), 3000);
+      }
+    } catch (err: any) {
+      alert("Error al actualizar funcionario: " + (err?.message || err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleDelete = async (id: string, staffName: string) => {
     if (!window.confirm(`¿Deseas eliminar a ${staffName} de la lista de personal de campo?`)) return;
     await deleteStaffMember(id);
@@ -196,8 +254,120 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           </div>
         )}
 
-        {/* PROMPT DE SEGURIDAD: VERIFICACIÓN DE PIN PERSONAL */}
-        {staffPendingPin ? (
+        {/* PROMPT DE EDICIÓN DE FUNCIONARIO */}
+        {editingMember ? (
+          <div className="p-4 bg-purple-50/90 border-2 border-purple-300 rounded-2xl space-y-3 animate-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-purple-200 pb-2">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-purple-700 text-white rounded-lg">
+                  <Edit2 className="w-3.5 h-3.5" />
+                </div>
+                <div>
+                  <h4 className="font-black text-slate-900 text-sm">Editar Datos de Funcionario</h4>
+                  <p className="text-[10px] text-slate-500">Actualiza los datos institucionales y de acceso</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingMember(null)}
+                className="text-slate-400 hover:text-slate-700 p-1"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Nombre Completo: *</label>
+                <input
+                  type="text"
+                  required
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full p-2.5 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 focus:ring-2 focus:ring-purple-600 focus:outline-hidden"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Rol / Cargo: *</label>
+                  <select
+                    value={editRole}
+                    onChange={(e) => setEditRole(e.target.value as any)}
+                    className="w-full p-2.5 bg-white border border-slate-300 rounded-xl font-bold text-slate-900"
+                  >
+                    <option value="veterinario">Médico Veterinario</option>
+                    <option value="auxiliar">Auxiliar Veterinario</option>
+                    <option value="operario">Operario de Albergue</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">PIN Personal (Opcional):</label>
+                  <input
+                    type="password"
+                    maxLength={6}
+                    value={editPin}
+                    onChange={(e) => setEditPin(e.target.value)}
+                    placeholder="Ej. 1234"
+                    className="w-full p-2.5 bg-white border border-slate-300 rounded-xl font-mono text-center font-bold"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Especialidad / Cargo Detallado:</label>
+                <input
+                  type="text"
+                  value={editSpecialty}
+                  onChange={(e) => setEditSpecialty(e.target.value)}
+                  placeholder="Ej: Cirugía, Hospitalización, etc."
+                  className="w-full p-2.5 bg-white border border-slate-300 rounded-xl text-slate-900"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Correo Institucional:</label>
+                  <input
+                    type="email"
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                    placeholder="correo@laperla.gov.co"
+                    className="w-full p-2.5 bg-white border border-slate-300 rounded-xl text-slate-900"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Teléfono / WhatsApp:</label>
+                  <input
+                    type="tel"
+                    value={editPhone}
+                    onChange={(e) => setEditPhone(e.target.value)}
+                    placeholder="300 000 0000"
+                    className="w-full p-2.5 bg-white border border-slate-300 rounded-xl text-slate-900"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingMember(null)}
+                  className="w-1/2 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl font-bold text-xs"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-1/2 py-2.5 bg-purple-700 hover:bg-purple-800 text-white rounded-xl font-black text-xs flex items-center justify-center gap-1.5 shadow-md transition-all active:scale-95"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{loading ? "Guardando..." : "Guardar Cambios"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        ) : staffPendingPin ? (
           <div className="p-4 bg-purple-50/80 border-2 border-purple-200 rounded-2xl space-y-3 animate-in zoom-in-95">
             <div className="flex items-center gap-3">
               <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-black text-sm shadow-sm ${staffPendingPin.avatarColor}`}>
@@ -325,6 +495,28 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                   </div>
                 ) : (
                   <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                    {currentUser && (
+                      <div className="p-2.5 bg-purple-50/80 border border-purple-200 rounded-2xl flex items-center justify-between gap-2 mb-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs shrink-0 ${currentUser.avatarColor}`}>
+                            {currentUser.role === "veterinario" ? "DR" : currentUser.role === "auxiliar" ? "AUX" : "OP"}
+                          </div>
+                          <div className="min-w-0">
+                            <span className="text-[10px] font-bold text-purple-700 block uppercase">Mi Sesión Actual</span>
+                            <span className="text-xs font-black text-slate-900 truncate block">{currentUser.name}</span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleStartEdit(currentUser)}
+                          className="px-2.5 py-1.5 bg-white hover:bg-purple-100 text-purple-800 border border-purple-300 rounded-xl text-xs font-bold flex items-center gap-1 shadow-2xs shrink-0"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                          <span>Modificar mis datos</span>
+                        </button>
+                      </div>
+                    )}
+
                     {staffList.map((staff) => {
                       const isCurrent = currentUser?.id === staff.id;
 
@@ -382,6 +574,18 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                                 <span>Entrar</span>
                               </span>
                             )}
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleStartEdit(staff);
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-purple-700 hover:bg-purple-50 rounded-lg transition-colors ml-1"
+                              title="Editar datos del funcionario"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
 
                             <button
                               type="button"

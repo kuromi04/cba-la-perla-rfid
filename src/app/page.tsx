@@ -250,12 +250,31 @@ export default function Home() {
     const handlePresenceEvent = () => {
       getConnectedStaff().then((staff) => setConnectedStaff(staff)).catch(() => {});
     };
+    const handleActiveUserUpdated = (e: any) => {
+      if (e.detail) {
+        setCurrentUser(e.detail);
+      }
+    };
+    const handleActiveUserDeleted = async () => {
+      const remaining = await getFieldStaff();
+      if (remaining.length > 0) {
+        handleSelectUser(remaining[0]);
+      } else {
+        setCurrentUser(null);
+        setIsLoginModalOpen(true);
+      }
+    };
+
     window.addEventListener("cba_presence_update", handlePresenceEvent);
+    window.addEventListener("cba_active_user_updated", handleActiveUserUpdated);
+    window.addEventListener("cba_active_user_deleted", handleActiveUserDeleted);
 
     return () => {
       stopPresence();
       stopRealtimeSync();
       window.removeEventListener("cba_presence_update", handlePresenceEvent);
+      window.removeEventListener("cba_active_user_updated", handleActiveUserUpdated);
+      window.removeEventListener("cba_active_user_deleted", handleActiveUserDeleted);
     };
   }, [currentUser]);
 
