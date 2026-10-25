@@ -58,3 +58,36 @@ export async function compressImageFile(
     reader.readAsDataURL(file);
   });
 }
+
+/**
+ * Comprime un Canvas o imagen capturada en vivo por la cámara a JPEG optimizado en base64
+ */
+export function compressCanvasToBase64(
+  sourceCanvas: HTMLCanvasElement,
+  maxDimension = 800,
+  quality = 0.75
+): string {
+  let width = sourceCanvas.width;
+  let height = sourceCanvas.height;
+
+  if (width > maxDimension || height > maxDimension) {
+    if (width > height) {
+      height = Math.round((height * maxDimension) / width);
+      width = maxDimension;
+    } else {
+      width = Math.round((width * maxDimension) / height);
+      height = maxDimension;
+    }
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return sourceCanvas.toDataURL("image/jpeg", quality);
+
+  ctx.fillStyle = "#FFFFFF";
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(sourceCanvas, 0, 0, width, height);
+  return canvas.toDataURL("image/jpeg", quality);
+}

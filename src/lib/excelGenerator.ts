@@ -369,7 +369,17 @@ export async function exportGateraExcel() {
 
   const workbook = XLSX.utils.book_new();
 
-  // Hoja 1: CENSO GATERA (Felinos Activos - Estructura Fiel de las 24 Columnas del Archivo Maestro)
+  // Cabecera institucional oficial Alcaldía de Medellín / CBA La Perla (Filas 1 a 6)
+  const INSTITUTIONAL_HEADER_ROWS: any[][] = [
+    ["SISTEMA INTEGRADO DE GESTIÓN", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""],
+    ["FORMATO REGISTRO PLAN SANITARIO BLOQUE ", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""],
+    ["Macroproceso: Gestión de Protección y Bienestar Animal", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""],
+    ["Proceso: Atención a la Población Animal Vulnerable", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""],
+    ["Código: FPM-AV3", "", "", "", "Versión: 5", "", "", "", "Fecha de Aprobación: 02/05/2023", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""],
+    ["", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""],
+  ];
+
+  // Hoja 1: CENSO GATERA (Felinos Activos - Estructura Fiel de las 24 Columnas en Fila 7 del Archivo Maestro)
   const activeCats = cats.filter(
     (c) => c.ubicacion?.toUpperCase().trim() !== "FALLECIDO" && (c as any).status?.toLowerCase().trim() !== "fallecido"
   );
@@ -377,33 +387,68 @@ export async function exportGateraExcel() {
     (c) => c.ubicacion?.toUpperCase().trim() === "FALLECIDO" || (c as any).status?.toLowerCase().trim() === "fallecido"
   );
 
-  const censoRows = activeCats.map((c) => ({
-    "N° animal": c.nroAnimal || "",
-    "Nº CANIL": c.ubicacion,
-    "MICROCHIP (MC)": c.microchip,
-    "HISTORIA CLINICA (HC)": c.hc,
-    "A": c.sexoCode || (c.sexo === "hembra" ? "HFA" : "MFA"),
-    "RAZA": c.raza || "DPC",
-    "FERALES": c.isFeral ? "SI" : "NO",
-    "COLOR": c.color || "",
-    "TIPO DE INGRESO": c.tipoIngreso || "RES",
-    "FECHA DE NACIMIENTO": c.fechaNacimiento || "",
-    "EDAD APROXIMADA MESES ": c.edad || "",
-    "FECHA DE INGRESO": c.fechaIngreso || "",
-    "CONDICION CORPORAL": c.condicionCorporal || "RANGO 2.0/5",
-    "ESTADO": c.estadoSalud || "Saludable",
-    "TRATAMIENTO": c.medicacion || "",
-    "OBSERVACIONES MEDICAS  ": c.observacionesMedicas || "",
-    "REQUIERE SEGUIMIENTO SI/NO ": c.requiereSeguimiento || (c.observacionesMedicas ? "SI" : "NO"),
-    "TIPO DE SEGUIMIENTO ": c.tipoSeguimiento || "TRATAMIENTO",
-    "FECHA ": c.fechaSeguimiento || "",
-    "PELUQUERIA ": c.peluqueria || "",
-    "CORTE DE UÑAS ": c.corteUnas || "",
-    "LIMPIEZA DE OIDOS": c.limpiezaOidos || "",
-    "FECHA EN QUE SE REALIZÓ": c.fechaAseo || "",
-    "MÉDICO VETERINARIO": c.medicoVeterinario || "Dra. Jenny Zapata Calle",
-  }));
-  const wsCenso = XLSX.utils.json_to_sheet(censoRows);
+  const CENSO_24_HEADERS = [
+    "N° animal",
+    "Nº CANIL",
+    "MICROCHIP (MC)",
+    "HISTORIA CLINICA (HC)",
+    "A",
+    "RAZA",
+    "FERALES",
+    "COLOR",
+    "TIPO DE INGRESO",
+    "FECHA DE NACIMIENTO",
+    "EDAD APROXIMADA MESES ",
+    "FECHA DE INGRESO",
+    "CONDICION CORPORAL",
+    "ESTADO",
+    "TRATAMIENTO",
+    "OBSERVACIONES MEDICAS  ",
+    "REQUIERE SEGUIMIENTO SI/NO ",
+    "TIPO DE SEGUIMIENTO ",
+    "FECHA ",
+    "PELUQUERIA ",
+    "CORTE DE UÑAS ",
+    "LIMPIEZA DE OIDOS",
+    "FECHA EN QUE SE REALIZÓ",
+    "MÉDICO VETERINARIO",
+  ];
+
+  const censoRows: any[][] = [
+    ...INSTITUTIONAL_HEADER_ROWS,
+    CENSO_24_HEADERS,
+  ];
+
+  activeCats.forEach((c) => {
+    censoRows.push([
+      c.nroAnimal || "",
+      c.ubicacion || "",
+      c.microchip || "",
+      c.hc || "",
+      c.sexoCode || (c.sexo === "hembra" ? "HFA" : "MFA"),
+      c.raza || "DPC",
+      c.isFeral ? "SI" : "NO",
+      c.color || "",
+      c.tipoIngreso || "RES",
+      c.fechaNacimiento || "",
+      c.edad || "",
+      c.fechaIngreso || "",
+      c.condicionCorporal || "RANGO 2.0/5",
+      c.estadoSalud || "Saludable",
+      c.medicacion || "",
+      c.observacionesMedicas || "",
+      c.requiereSeguimiento || (c.observacionesMedicas ? "SI" : "NO"),
+      c.tipoSeguimiento || "TRATAMIENTO",
+      c.fechaSeguimiento || "",
+      c.peluqueria || "",
+      c.corteUnas || "",
+      c.limpiezaOidos || "",
+      c.fechaAseo || "",
+      c.medicoVeterinario || "Dra. Jenny Zapata Calle",
+    ]);
+  });
+
+  const wsCenso = XLSX.utils.aoa_to_sheet(censoRows);
   wsCenso["!cols"] = [
     { wch: 10 }, // N° animal
     { wch: 22 }, // Nº CANIL
@@ -432,67 +477,183 @@ export async function exportGateraExcel() {
   ];
   XLSX.utils.book_append_sheet(workbook, wsCenso, "CENSO");
 
-  // Hoja 2: PLAN TTO OCTUBRE GATERA (Exclusivo Felinos Activos)
-  const ttoRows = activeCats
+  // Hoja 2: PLAN TTO OCTUBRE GATERA (Exclusivo Felinos Activos - Columnas idénticas al original)
+  const TTO_HEADERS = [
+    "FECHA INICIO",
+    "CANIL",
+    "MICROCHIP (MC)",
+    "DESCRIPCIÓN ",
+    "MEDICACION (DOSIS)",
+    "LIMPIEZA",
+    "FECHA FINAL ",
+    "TIPO ",
+    "SISTEMA AFECTADO",
+    "OBSERVACION ",
+    "MEDICO VETERINARIO ",
+  ];
+
+  const ttoRows: any[][] = [TTO_HEADERS];
+  activeCats
     .filter((c) => c.medicacion && c.medicacion !== "Ninguno")
-    .map((c) => ({
-      "CANIL": c.ubicacion,
-      "MICROCHIP (MC)": c.microchip,
-      "HISTORIA CLINICA (HC)": c.hc,
-      "DESCRIPCIÓN": c.descripcion,
-      "MEDICACION (DOSIS)": c.medicacion,
-      "SISTEMA": c.sistema,
-      "FECHA FINAL": c.fechaFinal,
-      "TIPO": c.tipo,
-      "PENDIENTES": c.pendientes,
-    }));
-  const wsTto = XLSX.utils.json_to_sheet(ttoRows);
+    .forEach((c) => {
+      ttoRows.push([
+        c.fechaInicio || "",
+        c.ubicacion || "",
+        c.microchip || "",
+        c.descripcion || c.nombre || "Felino GATERA",
+        c.medicacion || "",
+        c.limpieza || "",
+        c.fechaFinal || "HNI",
+        c.tipo || "FS",
+        c.sistema || "TEGUMEN",
+        c.observacionesMedicas || c.pendientes || "",
+        c.medicoVeterinario || "Dra. Jenny Zapata Calle",
+      ]);
+    });
+
+  const wsTto = XLSX.utils.aoa_to_sheet(ttoRows);
+  wsTto["!cols"] = [
+    { wch: 14 }, // FECHA INICIO
+    { wch: 18 }, // CANIL
+    { wch: 22 }, // MICROCHIP
+    { wch: 30 }, // DESCRIPCIÓN
+    { wch: 35 }, // MEDICACION
+    { wch: 16 }, // LIMPIEZA
+    { wch: 14 }, // FECHA FINAL
+    { wch: 10 }, // TIPO
+    { wch: 18 }, // SISTEMA AFECTADO
+    { wch: 32 }, // OBSERVACION
+    { wch: 28 }, // MEDICO VETERINARIO
+  ];
   XLSX.utils.book_append_sheet(workbook, wsTto, "PLAN TTO OCTUBRE");
 
-  // Hoja 3: PLAN SANITARIO FELINO (Felinos Activos)
-  const sanRows = activeCats.map((c) => ({
-    "CANIL": c.ubicacion,
-    "MICROCHIP (MC)": c.microchip,
-    "HISTORIA CLINICA (HC)": c.hc,
-    "DESCRIPCIÓN": c.descripcion,
-    "TRIPLE FELINA": c.vacunaTriple || "PENDIENTE",
-    "LEUCEMIA FELINA": c.vacunaLeucemia || "PENDIENTE",
-    "DESPARASITANTE": c.desparasitante || "FIPRONIL / TOTAL FCG",
-  }));
-  const wsSan = XLSX.utils.json_to_sheet(sanRows);
+  // Hoja 3: PLAN SANITARIO FELINO (35 Columnas Oficiales con Cabecera Institucional)
+  const SANITARIO_HEADERS = [
+    "No", "CANIL", "MICROCHIP (MC)", "HISTORIA CLINICA (HC)", "FECHA ", "TRIPLE", "LEUCEMIA", "RABIA",
+    "FECHA", "PRODUCTO", "FECHA", "PRODUCTO", "FECHA", "PRODUCTO", "FECHA", "PRODUCTO",
+    "FECHA", "INTERPRETACIÓN", "FECHA", "INTERPRETACIÓN", "FECHA", "INTERPRETACIÓN", "FECHA", "INTERPRETACIÓN",
+    "FECHA ", "FECHA ", "FECHA", "FECHA", "FECHA", "EXÁMENES", "SEXO", "ESPECIE", "EDAD", "MV", "OBSERVACIONES"
+  ];
+
+  const sanRows: any[][] = [
+    ...INSTITUTIONAL_HEADER_ROWS,
+    SANITARIO_HEADERS,
+  ];
+
+  activeCats.forEach((c, idx) => {
+    sanRows.push([
+      idx + 1,
+      c.ubicacion || "",
+      c.microchip || "",
+      c.hc || "",
+      c.vacunaFecha || "",
+      c.vacunaTriple || "PENDIENTE",
+      c.vacunaLeucemia || "PENDIENTE",
+      c.vacunaRabia || "PENDIENTE",
+      "", c.desparasitante || "FIPRONIL / TOTAL FCG",
+      "", "", "", "", "", "",
+      "", c.retroViralInterpretacion || "VIF / FeLV NEGATIVO",
+      "", "", "", "", "", "",
+      "", "", "", "", "",
+      c.examenes || "",
+      c.sexoCode || (c.sexo === "hembra" ? "HFA" : "MFA"),
+      "FELINO",
+      c.edad || "24 MESES",
+      c.medicoVeterinario || "Dra. Jenny Zapata Calle",
+      c.observacionesMedicas || "",
+    ]);
+  });
+
+  const wsSan = XLSX.utils.aoa_to_sheet(sanRows);
   XLSX.utils.book_append_sheet(workbook, wsSan, "PLAN SANITARIO");
 
-  // Hoja 4: CONTROL DE FELINOS FALLECIDOS (Preserva datos históricos completos)
-  if (deceasedCats.length > 0) {
-    const fallecidosRows = deceasedCats.map((c) => ({
-      "N° animal": c.nroAnimal || "",
-      "HISTORIA CLINICA (HC)": c.hc,
-      "MICROCHIP (MC)": c.microchip,
-      "NOMBRE / DESCRIPCIÓN": c.nombre || c.descripcion || "S/N",
-      "SEXO": c.sexo,
-      "RAZA": c.raza || "DPC",
-      "COLOR": c.color || "",
-      "ÚLTIMA UBICACIÓN PREVIA": (c as any).ubicacionPrevia || "GATERA",
-      "FECHA FALLECIMIENTO": (c as any).fechaFallecimiento || new Date().toISOString().split("T")[0],
-      "CAUSA / DIAGNÓSTICO": (c as any).causaFallecimiento || c.observacionesMedicas || "Sin causa especificada",
-      "MÉDICO VETERINARIO": c.medicoVeterinario || "Dra. Jenny Zapata Calle",
-    }));
-    const wsFallecidos = XLSX.utils.json_to_sheet(fallecidosRows);
-    wsFallecidos["!cols"] = [
-      { wch: 10 },
-      { wch: 14 },
-      { wch: 22 },
-      { wch: 30 },
-      { wch: 10 },
-      { wch: 12 },
-      { wch: 26 },
-      { wch: 22 },
-      { wch: 20 },
-      { wch: 40 },
-      { wch: 30 },
-    ];
-    XLSX.utils.book_append_sheet(workbook, wsFallecidos, "CONTROL FALLECIDOS");
-  }
+  // Hoja 4: MUERTES (Estructura oficial de 23 columnas con cabecera institucional)
+  const MUERTES_HEADERS = [
+    "N° animal",
+    "Nº CANIL",
+    "MICROCHIP (MC)",
+    "HISTORIA CLINICA (HC)",
+    "SEXO",
+    "RAZA",
+    "MANEJO ESPECIAL",
+    "COLOR",
+    "TIPO DE INGRESO",
+    "FECHA DE NACIMIENTO",
+    "EDAD APROXIMADA MESES ",
+    "FECHA DE INGRESO",
+    "CONDICION CORPORAL",
+    "ESTADO",
+    "TRATAMIENTO",
+    "OBSERVACIONES MEDICAS  ",
+    "REQUIERE SEGUIMIENTO SI/NO ",
+    "TIPO DE SEGUIMIENTO ",
+    "FECHA ",
+    "PELUQUERIA ",
+    "CORTE DE UÑAS ",
+    "LIMPIEZA DE OIDOS",
+    "FECHA EN QUE SE REALIZÓ",
+  ];
+
+  const muertesRows: any[][] = [
+    ...INSTITUTIONAL_HEADER_ROWS,
+    MUERTES_HEADERS,
+  ];
+
+  deceasedCats.forEach((c) => {
+    muertesRows.push([
+      c.nroAnimal || "",
+      (c as any).ubicacionPrevia || c.ubicacion || "GATERA",
+      c.microchip || "",
+      c.hc || "",
+      c.sexoCode || (c.sexo === "hembra" ? "HFA" : "MFA"),
+      c.raza || "DPC",
+      c.isFeral ? "SI" : "NO",
+      c.color || "",
+      c.tipoIngreso || "RES",
+      c.fechaNacimiento || "",
+      c.edad || "",
+      c.fechaIngreso || "",
+      c.condicionCorporal || "",
+      "FALLECIDO",
+      c.medicacion || "",
+      (c as any).causaFallecimiento || c.observacionesMedicas || "Fallecido",
+      "NO",
+      "FALLECIMIENTO",
+      (c as any).fechaFallecimiento || "",
+      "",
+      "",
+      "",
+      (c as any).fechaFallecimiento || "",
+    ]);
+  });
+
+  const wsMuertes = XLSX.utils.aoa_to_sheet(muertesRows);
+  wsMuertes["!cols"] = [
+    { wch: 10 },
+    { wch: 22 },
+    { wch: 22 },
+    { wch: 14 },
+    { wch: 8 },
+    { wch: 10 },
+    { wch: 16 },
+    { wch: 26 },
+    { wch: 16 },
+    { wch: 14 },
+    { wch: 20 },
+    { wch: 14 },
+    { wch: 16 },
+    { wch: 14 },
+    { wch: 30 },
+    { wch: 35 },
+    { wch: 14 },
+    { wch: 20 },
+    { wch: 14 },
+    { wch: 12 },
+    { wch: 14 },
+    { wch: 16 },
+    { wch: 16 },
+  ];
+  XLSX.utils.book_append_sheet(workbook, wsMuertes, "MUERTES");
 
   const today = new Date().toISOString().split("T")[0];
   XLSX.writeFile(workbook, `Plan_de_manejo_GATERA_${today}.xlsx`);

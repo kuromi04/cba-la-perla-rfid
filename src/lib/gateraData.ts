@@ -39,7 +39,12 @@ export interface GateraCat {
   fechaFinal: string;
   tipo: string;
 
-  // Plan Sanitario
+  // Plan Sanitario y Tratamientos
+  fechaInicio?: string;
+  limpieza?: string;
+  retroViralInterpretacion?: string;
+  examenes?: string;
+  vacunaFecha?: string;
   vacunaTriple?: string;
   vacunaLeucemia?: string;
   vacunaRabia?: string;

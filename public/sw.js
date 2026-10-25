@@ -1,4 +1,4 @@
-const CACHE_NAME = "cba-laperla-v14";
+const CACHE_NAME = "cba-laperla-v15";
 const ASSETS_TO_CACHE = [
   "/",
   "/manifest.json",

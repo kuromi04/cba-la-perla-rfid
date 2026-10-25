@@ -36,6 +36,7 @@ import { AssignAnimalModal } from "./AssignAnimalModal";
 import { BatchScannerModal } from "./BatchScannerModal";
 import { CanilCardModal } from "./CanilCardModal";
 import { RegisterNewAnimalModal } from "./RegisterNewAnimalModal";
+import { PhotoCaptureModal } from "./PhotoCaptureModal";
 import { ParsedClinicalIntent } from "@/lib/aiParser";
 import { StaffMember } from "@/lib/staff";
 import { OFFICIAL_GATERA_LOCATIONS, getAllGateraLocations, isDeceased } from "@/lib/gateraLocations";
@@ -83,6 +84,7 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
 
   // Estados para Fotografía del Felino
   const [selectedPhotoPreview, setSelectedPhotoPreview] = useState<string | null>(null);
+  const [isPhotoModalOpen, setIsPhotoModalOpen] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const scannerPhotoInputRef = useRef<HTMLInputElement>(null);
 
@@ -471,14 +473,11 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
     setTimeout(() => setFeedbackMessage(null), 4000);
   };
 
-  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !currentAnimal) return;
+  const saveAnimalPhoto = async (base64: string) => {
+    if (!currentAnimal) return;
     setIsUploadingPhoto(true);
     try {
-      const base64 = await compressImageFile(file, 800, 0.75);
       const cleanChip = currentAnimal.microchip.trim();
-
       const nowIso = new Date().toISOString();
 
       // 1. Actualizar db.animals
@@ -526,7 +525,7 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
         microchip: cleanChip,
         animalName: currentAnimal.name,
         location: currentAnimal.location,
-        details: `Fotografía del felino actualizada por ${currentUser?.name || "Personal"}`,
+        details: `Fotografía del felino actualizada con cámara/archivo por ${currentUser?.name || "Personal"}`,
         user: currentUser,
       }).catch(console.warn);
 
@@ -538,7 +537,7 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
         } catch {}
       }
 
-      setFeedbackMessage("📸 Fotografía del felino guardada y sincronizada.");
+      setFeedbackMessage("📸 Fotografía del felino capturada, guardada y sincronizada.");
       setTimeout(() => setFeedbackMessage(null), 4000);
     } catch (err) {
       console.error("Error al procesar fotografía:", err);
@@ -546,6 +545,18 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
     } finally {
       setIsUploadingPhoto(false);
       if (scannerPhotoInputRef.current) scannerPhotoInputRef.current.value = "";
+    }
+  };
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentAnimal) return;
+    try {
+      const base64 = await compressImageFile(file, 800, 0.75);
+      await saveAnimalPhoto(base64);
+    } catch (err) {
+      console.error("Error al comprimir fotografía:", err);
+      alert("No se pudo comprimir la fotografía.");
     }
   };
 
@@ -1426,9 +1437,9 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
                       <button
                         type="button"
                         disabled={isUploadingPhoto}
-                        onClick={() => scannerPhotoInputRef.current?.click()}
+                        onClick={() => setIsPhotoModalOpen(true)}
                         className="p-1 bg-purple-50 hover:bg-purple-100 text-purple-800 rounded-lg border border-purple-200 transition-all text-[9px]"
-                        title="Cambiar fotografía"
+                        title="Tomar o cambiar fotografía"
                       >
                         <Camera className="w-3 h-3" />
                       </button>
@@ -1447,9 +1458,9 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
                   <button
                     type="button"
                     disabled={isUploadingPhoto}
-                    onClick={() => scannerPhotoInputRef.current?.click()}
+                    onClick={() => setIsPhotoModalOpen(true)}
                     className="w-16 h-16 sm:w-20 sm:h-20 border-2 border-dashed border-purple-300 hover:border-purple-500 bg-purple-50/70 hover:bg-purple-100/70 rounded-2xl flex flex-col items-center justify-center text-purple-900 transition-all p-1 shadow-xs active:scale-95"
-                    title="Tomar o adjuntar foto del felino"
+                    title="Tomar foto con cámara o subir archivo"
                   >
                     {isUploadingPhoto ? (
                       <Loader2 className="w-5 h-5 animate-spin text-purple-600" />
@@ -1851,10 +1862,10 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
                           <button
                             type="button"
                             disabled={isUploadingPhoto}
-                            onClick={() => scannerPhotoInputRef.current?.click()}
+                            onClick={() => setIsPhotoModalOpen(true)}
                             className="px-2.5 py-1 bg-purple-100 hover:bg-purple-200 text-purple-900 rounded-lg text-xs font-bold flex items-center gap-1"
                           >
-                            <Camera className="w-3 h-3" /> Cambiar
+                            <Camera className="w-3 h-3" /> Tomar / Cambiar
                           </button>
                           <button
                             type="button"
@@ -1870,11 +1881,11 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
                       <button
                         type="button"
                         disabled={isUploadingPhoto}
-                        onClick={() => scannerPhotoInputRef.current?.click()}
+                        onClick={() => setIsPhotoModalOpen(true)}
                         className="w-full py-2 px-3 border border-dashed border-purple-300 hover:border-purple-500 bg-white rounded-xl text-purple-900 font-bold text-xs flex items-center justify-center gap-1.5 transition-all"
                       >
                         <Camera className="w-4 h-4 text-purple-700" />
-                        <span>Tomar o Cargar Fotografía</span>
+                        <span>📷 Tomar Foto con Cámara o Subir Archivo</span>
                       </button>
                     )}
                   </div>
@@ -2208,11 +2219,12 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
                 type="button"
                 disabled={isUploadingPhoto}
                 onClick={() => {
-                  scannerPhotoInputRef.current?.click();
+                  setSelectedPhotoPreview(null);
+                  setIsPhotoModalOpen(true);
                 }}
                 className="px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-md active:scale-95"
               >
-                <Camera className="w-4 h-4" /> Cambiar Fotografía
+                <Camera className="w-4 h-4" /> Tomar / Cambiar Fotografía
               </button>
               <button
                 type="button"
@@ -2226,6 +2238,21 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
           </div>
         </div>
       )}
+
+      {/* Modal Dedicado de Cámara y Captura de Fotos para Felinos Existentes */}
+      <PhotoCaptureModal
+        isOpen={isPhotoModalOpen}
+        onClose={() => setIsPhotoModalOpen(false)}
+        currentPhotoUrl={currentAnimal?.photoUrl}
+        animalName={currentAnimal ? `${currentAnimal.name} (${currentAnimal.microchip})` : "Felino"}
+        title="Fotografía del Felino"
+        onPhotoCaptured={(base64) => {
+          saveAnimalPhoto(base64);
+        }}
+        onPhotoDeleted={() => {
+          handleDeletePhoto();
+        }}
+      />
     </div>
   );
 };

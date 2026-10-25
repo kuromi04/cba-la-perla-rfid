@@ -25,6 +25,7 @@ import { compressImageFile } from "@/lib/imageUtils";
 import { recordAudit } from "@/lib/audit";
 import { OFFICIAL_GATERA_LOCATIONS, getAllGateraLocations } from "@/lib/gateraLocations";
 import { OFFICIAL_GATERA_COLORS, POPULAR_GATERA_COLORS } from "@/lib/gateraColors";
+import { PhotoCaptureModal } from "./PhotoCaptureModal";
 
 interface RegisterNewAnimalModalProps {
   isOpen: boolean;
@@ -83,6 +84,7 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
 
   // Fotografía del Felino
   const [photoUrl, setPhotoUrl] = useState<string>("");
+  const [isPhotoModalOpen, setIsPhotoModalOpen] = useState(false);
   const [isCompressingPhoto, setIsCompressingPhoto] = useState(false);
   const photoInputRef = useRef<HTMLInputElement>(null);
 
@@ -698,10 +700,10 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
                     <button
                       type="button"
                       disabled={isCompressingPhoto}
-                      onClick={() => photoInputRef.current?.click()}
+                      onClick={() => setIsPhotoModalOpen(true)}
                       className="px-2.5 py-1 bg-purple-100 hover:bg-purple-200 text-purple-900 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all"
                     >
-                      <Camera className="w-3 h-3" /> Cambiar
+                      <Camera className="w-3 h-3" /> Tomar / Cambiar
                     </button>
                     <button
                       type="button"
@@ -718,7 +720,7 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
               <button
                 type="button"
                 disabled={isCompressingPhoto}
-                onClick={() => photoInputRef.current?.click()}
+                onClick={() => setIsPhotoModalOpen(true)}
                 className="w-full p-3 border-2 border-dashed border-purple-200 hover:border-purple-400 bg-purple-50/40 hover:bg-purple-50 rounded-xl flex items-center justify-center gap-2.5 text-purple-900 font-bold text-xs transition-all active:scale-[0.99]"
               >
                 {isCompressingPhoto ? (
@@ -1236,6 +1238,21 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Modal Dedicado de Cámara y Captura de Fotos */}
+      <PhotoCaptureModal
+        isOpen={isPhotoModalOpen}
+        onClose={() => setIsPhotoModalOpen(false)}
+        currentPhotoUrl={photoUrl}
+        animalName={name ? `${name} (${microchip})` : `Felino (${microchip || "Sin chip"})`}
+        title="Fotografía del Felino"
+        onPhotoCaptured={(compressedBase64) => {
+          setPhotoUrl(compressedBase64);
+        }}
+        onPhotoDeleted={() => {
+          handleRemovePhoto();
+        }}
+      />
     </div>
   );
 };
