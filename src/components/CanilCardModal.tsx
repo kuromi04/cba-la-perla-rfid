@@ -264,16 +264,23 @@ export const CanilCardModal: React.FC<CanilCardModalProps> = ({
               </div>
             </div>
 
-            {/* Columna Derecha (1/3): Código QR de Acceso Instantáneo */}
+            {/* Columna Derecha (1/3): Fotografía + Código QR Oficial */}
             <div className="flex flex-col items-center justify-center p-3 bg-slate-50 border-2 border-slate-200 rounded-3xl text-center space-y-1.5 print:border-black">
+              {animal.photoUrl && (
+                <img
+                  src={animal.photoUrl}
+                  alt={`Foto de ${animal.name}`}
+                  className="w-24 h-24 object-cover rounded-2xl shadow-xs border-2 border-slate-300 mb-1"
+                />
+              )}
               {qrDataUrl ? (
                 <img
                   src={qrDataUrl}
                   alt={`QR de ${animal.name}`}
-                  className="w-36 h-36 sm:w-40 sm:h-40 rounded-xl shadow-sm border border-slate-200 print:shadow-none"
+                  className="w-32 h-32 sm:w-36 sm:h-36 rounded-xl shadow-sm border border-slate-200 print:shadow-none"
                 />
               ) : (
-                <div className="w-36 h-36 bg-slate-200 animate-pulse rounded-xl" />
+                <div className="w-32 h-32 bg-slate-200 animate-pulse rounded-xl" />
               )}
               <div className="space-y-0.5">
                 <span className="text-[10px] font-black text-slate-900 flex items-center justify-center gap-1">

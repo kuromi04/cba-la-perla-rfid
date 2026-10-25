@@ -16,7 +16,12 @@ import {
   Sparkles,
   Stethoscope,
   Scissors,
+  Camera,
+  Trash2,
+  Image as ImageIcon,
+  Loader2,
 } from "lucide-react";
+import { compressImageFile } from "@/lib/imageUtils";
 import { OFFICIAL_GATERA_LOCATIONS, getAllGateraLocations } from "@/lib/gateraLocations";
 import { OFFICIAL_GATERA_COLORS, POPULAR_GATERA_COLORS } from "@/lib/gateraColors";
 
@@ -75,6 +80,11 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Fotografía del Felino
+  const [photoUrl, setPhotoUrl] = useState<string>("");
+  const [isCompressingPhoto, setIsCompressingPhoto] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const [allLocations, setAllLocations] = useState<string[]>(OFFICIAL_GATERA_LOCATIONS);
@@ -82,9 +92,36 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
 
   useEffect(() => {
     if (initialMicrochip) {
-      setMicrochip(initialMicrochip.trim());
+      const chip = initialMicrochip.trim();
+      setMicrochip(chip);
+      db.animals.where("microchip").equals(chip).first().then((ex) => {
+        if (ex?.photoUrl) {
+          setPhotoUrl(ex.photoUrl);
+        }
+      });
     }
   }, [initialMicrochip]);
+
+  const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsCompressingPhoto(true);
+    try {
+      const compressedBase64 = await compressImageFile(file, 800, 0.75);
+      setPhotoUrl(compressedBase64);
+    } catch (err) {
+      console.error("Error al procesar fotografía:", err);
+      alert("No se pudo procesar la imagen seleccionada.");
+    } finally {
+      setIsCompressingPhoto(false);
+      if (photoInputRef.current) photoInputRef.current.value = "";
+    }
+  };
+
+  const handleRemovePhoto = () => {
+    setPhotoUrl("");
+    if (photoInputRef.current) photoInputRef.current.value = "";
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -213,6 +250,7 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
         retroviralStatus: computedRetro,
         vifStatus,
         felvStatus,
+        photoUrl: photoUrl || existingAnimal?.photoUrl || undefined,
       };
 
       if (existingAnimal?.id) {
@@ -263,6 +301,7 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
         fechaFinal: hasTreatment ? `+${totalDoses} días` : "HNI",
         tipo: "FS",
         desparasitante: "AL DÍA (FELINO)",
+        photoUrl: photoUrl || existingGatera?.photoUrl || existingAnimal?.photoUrl || undefined,
       };
 
       if (existingGatera?.id) {
@@ -596,6 +635,82 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
                   ))}
               </div>
             </div>
+          </div>
+
+          {/* Fotografía del Felino */}
+          <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl">
+            <div className="flex items-center justify-between mb-2">
+              <label className="font-black text-slate-800 text-[11px] uppercase tracking-wide flex items-center gap-1.5">
+                <Camera className="w-4 h-4 text-purple-600" />
+                Fotografía del Felino (Opcional):
+              </label>
+              <span className="text-[10px] text-slate-500 font-medium">
+                {photoUrl ? "Foto adjuntada" : "Sin foto"}
+              </span>
+            </div>
+
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handlePhotoSelect}
+            />
+
+            {photoUrl ? (
+              <div className="flex items-center gap-3 bg-white p-2.5 rounded-xl border border-purple-200">
+                <img
+                  src={photoUrl}
+                  alt="Foto del felino"
+                  className="w-16 h-16 sm:w-20 sm:h-20 object-cover rounded-xl border border-purple-300 shadow-xs shrink-0"
+                />
+                <div className="flex-1 space-y-1.5">
+                  <p className="text-xs font-bold text-slate-800">Foto registrada</p>
+                  <p className="text-[10px] text-slate-500">
+                    Comprimida y lista para guardar offline en el dispositivo y sincronizar a la nube.
+                  </p>
+                  <div className="flex items-center gap-2 pt-0.5">
+                    <button
+                      type="button"
+                      disabled={isCompressingPhoto}
+                      onClick={() => photoInputRef.current?.click()}
+                      className="px-2.5 py-1 bg-purple-100 hover:bg-purple-200 text-purple-900 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all"
+                    >
+                      <Camera className="w-3 h-3" /> Cambiar
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isCompressingPhoto}
+                      onClick={handleRemovePhoto}
+                      className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all"
+                    >
+                      <Trash2 className="w-3 h-3" /> Borrar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                disabled={isCompressingPhoto}
+                onClick={() => photoInputRef.current?.click()}
+                className="w-full p-3 border-2 border-dashed border-purple-200 hover:border-purple-400 bg-purple-50/40 hover:bg-purple-50 rounded-xl flex items-center justify-center gap-2.5 text-purple-900 font-bold text-xs transition-all active:scale-[0.99]"
+              >
+                {isCompressingPhoto ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-purple-600" />
+                    <span>Optimizando fotografía...</span>
+                  </>
+                ) : (
+                  <>
+                    <div className="p-1.5 bg-purple-200/70 rounded-lg text-purple-800">
+                      <Camera className="w-4 h-4" />
+                    </div>
+                    <span>📷 Tomar Foto con Cámara o Subir de Galería</span>
+                  </>
+                )}
+              </button>
+            )}
           </div>
 
           {/* 3. Historia Clínica (HC), Sexo Code (A) y Raza */}

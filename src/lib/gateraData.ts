@@ -50,6 +50,7 @@ export interface GateraCat {
   fechaFallecimiento?: string;
   causaFallecimiento?: string;
   ubicacionPrevia?: string;
+  photoUrl?: string;
 }
 
 export const GATERA_CATS_DATA: GateraCat[] = [

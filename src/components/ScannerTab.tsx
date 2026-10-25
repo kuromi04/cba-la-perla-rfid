@@ -24,7 +24,13 @@ import {
   X,
   Palette,
   Check,
+  Camera,
+  Trash2,
+  ZoomIn,
+  Image as ImageIcon,
+  Loader2,
 } from "lucide-react";
+import { compressImageFile } from "@/lib/imageUtils";
 import { VoiceModal } from "./VoiceModal";
 import { AssignAnimalModal } from "./AssignAnimalModal";
 import { BatchScannerModal } from "./BatchScannerModal";
@@ -73,6 +79,11 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
   const [rxDoses, setRxDoses] = useState<number>(7);
   const [rxFrequency, setRxFrequency] = useState("SID");
   const [rxPendientes, setRxPendientes] = useState("");
+
+  // Estados para Fotografía del Felino
+  const [selectedPhotoPreview, setSelectedPhotoPreview] = useState<string | null>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const scannerPhotoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     getAllGateraLocations().then((locs) => {
@@ -126,6 +137,10 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
           .first();
 
         if (catRecord) {
+          if (!found.photoUrl && catRecord.photoUrl) {
+            found.photoUrl = catRecord.photoUrl;
+            setCurrentAnimal({ ...found, photoUrl: catRecord.photoUrl });
+          }
           setShelterEntries([
             {
               ubicacion: catRecord.ubicacion,
@@ -409,6 +424,99 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
 
     setFeedbackMessage(`🎨 Color oficial actualizado a "${selectedColor}" con éxito.`);
     setTimeout(() => setFeedbackMessage(null), 4000);
+  };
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentAnimal) return;
+    setIsUploadingPhoto(true);
+    try {
+      const base64 = await compressImageFile(file, 800, 0.75);
+      const cleanChip = currentAnimal.microchip.trim();
+
+      // 1. Actualizar db.animals
+      if (currentAnimal.id) {
+        await db.animals.update(currentAnimal.id, { photoUrl: base64 });
+      } else {
+        const anim = await db.animals.where("microchip").equals(cleanChip).first();
+        if (anim?.id) {
+          await db.animals.update(anim.id, { photoUrl: base64 });
+        }
+      }
+
+      // 2. Actualizar db.gateraRecords
+      const catRec = await db.gateraRecords.where("microchip").equals(cleanChip).first();
+      if (catRec && catRec.id) {
+        await db.gateraRecords.update(catRec.id, { photoUrl: base64 });
+      }
+
+      const updated = { ...currentAnimal, photoUrl: base64 };
+      setCurrentAnimal(updated);
+
+      // 3. Sincronizar en Supabase
+      if (typeof window !== "undefined" && navigator.onLine) {
+        try {
+          const { syncAnimalToSupabase } = await import("@/lib/supabase");
+          syncAnimalToSupabase(updated).catch(console.warn);
+        } catch {}
+      }
+
+      setFeedbackMessage("📸 Fotografía del felino guardada y sincronizada.");
+      setTimeout(() => setFeedbackMessage(null), 4000);
+    } catch (err) {
+      console.error("Error al procesar fotografía:", err);
+      alert("No se pudo procesar la fotografía.");
+    } finally {
+      setIsUploadingPhoto(false);
+      if (scannerPhotoInputRef.current) scannerPhotoInputRef.current.value = "";
+    }
+  };
+
+  const handleDeletePhoto = async () => {
+    if (!currentAnimal) return;
+    const confirmDelete = window.confirm("¿Seguro que deseas eliminar la fotografía de este felino?");
+    if (!confirmDelete) return;
+
+    setIsUploadingPhoto(true);
+    try {
+      const cleanChip = currentAnimal.microchip.trim();
+
+      // 1. Actualizar db.animals
+      if (currentAnimal.id) {
+        await db.animals.update(currentAnimal.id, { photoUrl: undefined });
+      } else {
+        const anim = await db.animals.where("microchip").equals(cleanChip).first();
+        if (anim?.id) {
+          await db.animals.update(anim.id, { photoUrl: undefined });
+        }
+      }
+
+      // 2. Actualizar db.gateraRecords
+      const catRec = await db.gateraRecords.where("microchip").equals(cleanChip).first();
+      if (catRec && catRec.id) {
+        await db.gateraRecords.update(catRec.id, { photoUrl: undefined });
+      }
+
+      const updated = { ...currentAnimal, photoUrl: undefined };
+      setCurrentAnimal(updated);
+
+      // 3. Sincronizar en Supabase (elimina en la nube pasando null)
+      if (typeof window !== "undefined" && navigator.onLine) {
+        try {
+          const { syncAnimalToSupabase } = await import("@/lib/supabase");
+          syncAnimalToSupabase(updated).catch(console.warn);
+        } catch {}
+      }
+
+      setSelectedPhotoPreview(null);
+      setFeedbackMessage("🗑️ Fotografía del felino eliminada correctamente.");
+      setTimeout(() => setFeedbackMessage(null), 4000);
+    } catch (err) {
+      console.error("Error al eliminar fotografía:", err);
+      alert("Error al eliminar la fotografía.");
+    } finally {
+      setIsUploadingPhoto(false);
+    }
   };
 
   const handleSaveQuickEdit = async () => {
@@ -1125,22 +1233,94 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
               )}
             </div>
 
-            {/* Ubicación Actual */}
-            <div className="px-4 py-2 bg-indigo-50 border border-indigo-200 rounded-2xl flex flex-col items-center shrink-0">
-              <span className="text-[10px] font-bold text-indigo-600 uppercase flex items-center gap-1">
-                <MapPin className="w-3 h-3" /> UBICACIÓN
-              </span>
-              <span className="text-base font-black text-indigo-900 text-center">{currentAnimal.location}</span>
-              {(currentUser?.role === "veterinario" || currentUser?.role === "admin") && !isEditing && (
-                <button
-                  type="button"
-                  onClick={() => setIsEditing(true)}
-                  className="mt-1 text-[10px] font-black text-indigo-700 bg-white hover:bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded-lg flex items-center gap-1 transition-all active:scale-95 shadow-xs"
-                  title="Cambiar de patio, canil o jaula (Traslado)"
-                >
-                  <Edit3 className="w-2.5 h-2.5" /> Trasladar
-                </button>
-              )}
+            {/* Controles de Cabecera: Fotografía y Ubicación */}
+            <div className="flex items-center gap-2.5 shrink-0 flex-wrap sm:flex-nowrap justify-end">
+              {/* Fotografía del Felino / Animal */}
+              <div className="flex flex-col items-center">
+                <input
+                  ref={scannerPhotoInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handlePhotoUpload}
+                />
+                {currentAnimal.photoUrl ? (
+                  <div className="relative group">
+                    <img
+                      src={currentAnimal.photoUrl}
+                      alt={currentAnimal.name}
+                      onClick={() => setSelectedPhotoPreview(currentAnimal.photoUrl!)}
+                      className="w-16 h-16 sm:w-20 sm:h-20 object-cover rounded-2xl border-2 border-purple-400 shadow-sm cursor-pointer hover:opacity-90 active:scale-95 transition-all"
+                      title="Toca para ver la foto en pantalla completa"
+                    />
+                    <div className="flex items-center justify-center gap-1 mt-1">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPhotoPreview(currentAnimal.photoUrl!)}
+                        className="p-1 bg-purple-50 hover:bg-purple-100 text-purple-800 rounded-lg border border-purple-200 transition-all text-[9px]"
+                        title="Ver ampliada"
+                      >
+                        <ZoomIn className="w-3 h-3" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isUploadingPhoto}
+                        onClick={() => scannerPhotoInputRef.current?.click()}
+                        className="p-1 bg-purple-50 hover:bg-purple-100 text-purple-800 rounded-lg border border-purple-200 transition-all text-[9px]"
+                        title="Cambiar fotografía"
+                      >
+                        <Camera className="w-3 h-3" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isUploadingPhoto}
+                        onClick={handleDeletePhoto}
+                        className="p-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg border border-rose-200 transition-all text-[9px]"
+                        title="Eliminar fotografía"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={isUploadingPhoto}
+                    onClick={() => scannerPhotoInputRef.current?.click()}
+                    className="w-16 h-16 sm:w-20 sm:h-20 border-2 border-dashed border-purple-300 hover:border-purple-500 bg-purple-50/70 hover:bg-purple-100/70 rounded-2xl flex flex-col items-center justify-center text-purple-900 transition-all p-1 shadow-xs active:scale-95"
+                    title="Tomar o adjuntar foto del felino"
+                  >
+                    {isUploadingPhoto ? (
+                      <Loader2 className="w-5 h-5 animate-spin text-purple-600" />
+                    ) : (
+                      <>
+                        <Camera className="w-5 h-5 text-purple-700 mb-0.5" />
+                        <span className="text-[9px] font-black leading-tight text-center">
+                          + Foto
+                        </span>
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+
+              {/* Ubicación Actual */}
+              <div className="px-3.5 sm:px-4 py-2 bg-indigo-50 border border-indigo-200 rounded-2xl flex flex-col items-center shrink-0">
+                <span className="text-[10px] font-bold text-indigo-600 uppercase flex items-center gap-1">
+                  <MapPin className="w-3 h-3" /> UBICACIÓN
+                </span>
+                <span className="text-sm sm:text-base font-black text-indigo-900 text-center">{currentAnimal.location}</span>
+                {(currentUser?.role === "veterinario" || currentUser?.role === "admin") && !isEditing && (
+                  <button
+                    type="button"
+                    onClick={() => setIsEditing(true)}
+                    className="mt-1 text-[10px] font-black text-indigo-700 bg-white hover:bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded-lg flex items-center gap-1 transition-all active:scale-95 shadow-xs"
+                    title="Cambiar de patio, canil o jaula (Traslado)"
+                  >
+                    <Edit3 className="w-2.5 h-2.5" /> Trasladar
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -1489,6 +1669,55 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
                     className="w-full p-2.5 bg-white border rounded-xl"
                   />
                 </div>
+                {currentAnimal.species === "gato" && (
+                  <div className="p-3 bg-purple-50/70 border border-purple-200 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="font-bold text-slate-700 text-xs flex items-center gap-1.5">
+                        <Camera className="w-4 h-4 text-purple-700" /> Fotografía del Felino:
+                      </label>
+                      <span className="text-[10px] text-purple-800 font-bold">
+                        {currentAnimal.photoUrl ? "Foto actual cargada" : "Sin foto"}
+                      </span>
+                    </div>
+                    {currentAnimal.photoUrl ? (
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={currentAnimal.photoUrl}
+                          alt="Foto actual"
+                          className="w-12 h-12 object-cover rounded-xl border border-purple-300 shadow-xs shrink-0"
+                        />
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={isUploadingPhoto}
+                            onClick={() => scannerPhotoInputRef.current?.click()}
+                            className="px-2.5 py-1 bg-purple-100 hover:bg-purple-200 text-purple-900 rounded-lg text-xs font-bold flex items-center gap-1"
+                          >
+                            <Camera className="w-3 h-3" /> Cambiar
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isUploadingPhoto}
+                            onClick={handleDeletePhoto}
+                            className="px-2.5 py-1 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-lg text-xs font-bold flex items-center gap-1"
+                          >
+                            <Trash2 className="w-3 h-3" /> Borrar
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={isUploadingPhoto}
+                        onClick={() => scannerPhotoInputRef.current?.click()}
+                        className="w-full py-2 px-3 border border-dashed border-purple-300 hover:border-purple-500 bg-white rounded-xl text-purple-900 font-bold text-xs flex items-center justify-center gap-1.5 transition-all"
+                      >
+                        <Camera className="w-4 h-4 text-purple-700" />
+                        <span>Tomar o Cargar Fotografía</span>
+                      </button>
+                    )}
+                  </div>
+                )}
                 <div>
                   <label className="font-bold text-slate-700 block mb-1">Modificar Pendientes:</label>
                   <input
@@ -1773,6 +2002,69 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
           handleSearch(animal.microchip);
         }}
       />
+      {/* Lightbox / Visualizador de Fotografía a Pantalla Completa */}
+      {selectedPhotoPreview && (
+        <div
+          className="fixed inset-0 z-[120] bg-black/90 backdrop-blur-md p-4 flex flex-col items-center justify-center animate-in fade-in"
+          onClick={() => setSelectedPhotoPreview(null)}
+        >
+          <div
+            className="relative max-w-lg w-full bg-slate-900 border border-slate-700 rounded-3xl overflow-hidden shadow-2xl p-4 flex flex-col items-center space-y-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-full flex items-center justify-between text-white border-b border-slate-800 pb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🐱</span>
+                <div>
+                  <h4 className="font-black text-sm text-slate-100">
+                    {currentAnimal?.name || "Felino"} ({currentAnimal?.color || currentAnimal?.breed || "GATERA"})
+                  </h4>
+                  <span className="text-[11px] font-mono text-slate-400">
+                    Chip: {currentAnimal?.shortChip || currentAnimal?.microchip} • Ubicación: {currentAnimal?.location}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedPhotoPreview(null)}
+                className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-all"
+                title="Cerrar visor"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="w-full max-h-[65vh] flex items-center justify-center overflow-hidden rounded-2xl bg-black">
+              <img
+                src={selectedPhotoPreview}
+                alt="Fotografía completa del felino"
+                className="max-h-[65vh] w-auto object-contain rounded-xl shadow-lg"
+              />
+            </div>
+
+            <div className="w-full flex items-center justify-between gap-2 pt-1 border-t border-slate-800">
+              <button
+                type="button"
+                disabled={isUploadingPhoto}
+                onClick={() => {
+                  scannerPhotoInputRef.current?.click();
+                }}
+                className="px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-md active:scale-95"
+              >
+                <Camera className="w-4 h-4" /> Cambiar Fotografía
+              </button>
+              <button
+                type="button"
+                disabled={isUploadingPhoto}
+                onClick={handleDeletePhoto}
+                className="px-3.5 py-2 bg-rose-600/80 hover:bg-rose-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-md active:scale-95"
+              >
+                <Trash2 className="w-4 h-4" /> Eliminar Fotografía
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
