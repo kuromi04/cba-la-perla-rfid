@@ -10,6 +10,7 @@ import { MagicLinkModal } from "@/components/MagicLinkModal";
 import { LoginModal } from "@/components/LoginModal";
 import { SupabaseModal } from "@/components/SupabaseModal";
 import { AdminDashboardModal } from "@/components/AdminDashboardModal";
+import { PresenceModal } from "@/components/PresenceModal";
 import { AlcaldiaMedellinLogo, LaPerlaLogo, DeveloperCredit } from "@/components/OfficialLogos";
 import { StaffMember, getAllStaff, getFieldStaff, canEditAnimals, registerStaffMember } from "@/lib/staff";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -28,12 +29,22 @@ import {
   ArrowUp,
   Cloud,
   Shield,
+  Users,
+  Smartphone,
+  Laptop,
+  CheckCircle2,
+  RefreshCw,
 } from "lucide-react";
 import {
   isSupabaseConfigured,
   syncAllLocalToSupabase,
   recordStaffPresence,
   saveSupabaseCredentials,
+  startPresenceMonitoring,
+  setupRealtimeDatabaseSync,
+  getConnectedStaff,
+  ConnectedStaff,
+  getHumanReadableDevice,
 } from "@/lib/supabase";
 
 export default function Home() {
@@ -47,6 +58,10 @@ export default function Home() {
   const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState<boolean>(false);
   const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState<boolean>(false);
+  const [connectedStaff, setConnectedStaff] = useState<ConnectedStaff[]>([]);
+  const [isPresenceModalOpen, setIsPresenceModalOpen] = useState<boolean>(false);
+  const [realtimeToast, setRealtimeToast] = useState<string | null>(null);
+  const [isManualSyncing, setIsManualSyncing] = useState<boolean>(false);
   const [scannedChipParam, setScannedChipParam] = useState<string>("");
   const [showScrollTop, setShowScrollTop] = useState<boolean>(false);
   const contentRef = React.useRef<HTMLDivElement>(null);
@@ -210,18 +225,38 @@ export default function Home() {
     };
   }, []);
 
-  // Transmitir presencia activa en tiempo real a Supabase para supervisión en vivo
+  // Transmitir presencia activa en tiempo real (Heartbeat 15s) y escuchar cambios en tiempo real
   useEffect(() => {
-    if (!currentUser) return;
-    recordStaffPresence(currentUser);
+    // 1. Monitoreo de presencia en vivo de profesionales (móvil y PC)
+    const stopPresence = startPresenceMonitoring(currentUser, (staff) => {
+      setConnectedStaff(staff);
+    });
 
-    const timer = setInterval(() => {
-      if (typeof window !== "undefined" && navigator.onLine) {
-        recordStaffPresence(currentUser);
+    // 2. Suscripción a cambios en tiempo real desde Supabase (WebSocket)
+    const stopRealtimeSync = setupRealtimeDatabaseSync((entity, data) => {
+      if (entity === "animal") {
+        setRealtimeToast(
+          `🔄 Sincronizado en tiempo real: ${data.name || data.microchip} en ${data.location}`
+        );
+        refreshActiveCatsCount();
+        setTimeout(() => setRealtimeToast(null), 4500);
+      } else if (entity === "task") {
+        setRealtimeToast(`📋 Tarea de turno actualizada desde otro dispositivo`);
+        setTimeout(() => setRealtimeToast(null), 3500);
       }
-    }, 25000);
+    });
 
-    return () => clearInterval(timer);
+    // 3. Escuchar evento de actualización de presencia local
+    const handlePresenceEvent = () => {
+      getConnectedStaff().then((staff) => setConnectedStaff(staff)).catch(() => {});
+    };
+    window.addEventListener("cba_presence_update", handlePresenceEvent);
+
+    return () => {
+      stopPresence();
+      stopRealtimeSync();
+      window.removeEventListener("cba_presence_update", handlePresenceEvent);
+    };
   }, [currentUser]);
 
   const handleSelectUser = (user: StaffMember) => {
@@ -295,6 +330,21 @@ export default function Home() {
 
           {/* Acciones Rápidas */}
           <div className="flex items-center gap-1.5 shrink-0">
+            {/* Botón Presencia en Vivo: Profesionales Conectados (Móvil & PC) */}
+            <button
+              type="button"
+              onClick={() => setIsPresenceModalOpen(true)}
+              className="flex items-center gap-1.5 bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-500/50 px-2.5 py-1.5 rounded-xl text-[11px] font-black shadow-xs active:scale-95 transition-all"
+              title="Ver profesionales conectados en tiempo real desde PC o Móvil"
+            >
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <span>{connectedStaff.filter((s) => s.isOnlineNow).length || (currentUser ? 1 : 0)}</span>
+              <span className="hidden sm:inline">en línea</span>
+            </button>
+
             {/* Botón Panel de Administración & Auditoría */}
             <button
               type="button"
@@ -463,6 +513,28 @@ export default function Home() {
           }
         }}
       />
+
+      {/* Modal de Presencia de Personal en Vivo & Multi-Dispositivo */}
+      <PresenceModal
+        isOpen={isPresenceModalOpen}
+        onClose={() => setIsPresenceModalOpen(false)}
+        connectedStaff={connectedStaff}
+        currentUser={currentUser}
+        onForceSync={async () => {
+          await syncAnimalsBidirectional();
+          await refreshActiveCatsCount();
+          const updatedStaff = await getConnectedStaff();
+          setConnectedStaff(updatedStaff);
+        }}
+      />
+
+      {/* Toast Flotante de Sincronización en Tiempo Real */}
+      {realtimeToast && (
+        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-50 max-w-sm w-[90%] bg-slate-900/95 text-emerald-300 border border-emerald-500/50 px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2.5 text-xs font-bold backdrop-blur-xl animate-in fade-in slide-in-from-top-4 duration-300">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
+          <span className="flex-1 truncate">{realtimeToast}</span>
+        </div>
+      )}
 
       {/* 3. Barra de Navegación Inferior Flotante ("Glass Dock") */}
       <nav className="fixed bottom-3 left-3 right-3 max-w-lg mx-auto bg-slate-950/90 backdrop-blur-2xl border border-slate-800/90 rounded-3xl p-1.5 px-3 flex justify-between items-center z-30 shadow-2xl shadow-black/60">

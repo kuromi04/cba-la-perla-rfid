@@ -515,27 +515,68 @@ export async function syncAnimalsBidirectional(): Promise<{ pulled: number; push
 
             const locationChanged = Boolean(remote.location && remote.location !== existing.location);
             const statusChanged = Boolean(remote.status && remote.status !== existing.status);
+            const colorChanged = Boolean(remote.color && remote.color !== existing.color);
+            const notesChanged = Boolean(remote.notes && remote.notes !== existing.notes);
+            const photoChanged = Boolean(remote.photoUrl && remote.photoUrl !== existing.photoUrl);
+            const retroChanged = Boolean(
+              (remote.retroviralStatus && remote.retroviralStatus !== existing.retroviralStatus) ||
+              (remote.vifStatus && remote.vifStatus !== existing.vifStatus) ||
+              (remote.felvStatus && remote.felvStatus !== existing.felvStatus)
+            );
+            const conditionChanged = Boolean(remote.condicionCorporal && remote.condicionCorporal !== existing.condicionCorporal);
+            const healthChanged = Boolean(remote.estadoSalud && remote.estadoSalud !== existing.estadoSalud);
 
-            if (locationChanged || statusChanged || (isRemoteFallecido && !isLocalFallecido)) {
+            if (
+              locationChanged ||
+              statusChanged ||
+              colorChanged ||
+              notesChanged ||
+              photoChanged ||
+              retroChanged ||
+              conditionChanged ||
+              healthChanged ||
+              (isRemoteFallecido && !isLocalFallecido)
+            ) {
               if (existing.id) {
                 await db.animals.update(existing.id, {
-                  location: remote.location,
-                  status: remote.status,
+                  name: remote.name || existing.name,
+                  location: remote.location || existing.location,
+                  status: remote.status || existing.status,
+                  color: remote.color || existing.color,
+                  photoUrl: remote.photoUrl || existing.photoUrl,
+                  notes: remote.notes || existing.notes,
+                  observacionesMedicas: remote.observacionesMedicas || existing.observacionesMedicas,
+                  retroviralStatus: remote.retroviralStatus || existing.retroviralStatus,
+                  vifStatus: remote.vifStatus || existing.vifStatus,
+                  felvStatus: remote.felvStatus || existing.felvStatus,
+                  condicionCorporal: remote.condicionCorporal || existing.condicionCorporal,
+                  estadoSalud: remote.estadoSalud || existing.estadoSalud,
+                  medicoVeterinario: remote.medicoVeterinario || existing.medicoVeterinario,
                   fechaFallecimiento: remote.fechaFallecimiento,
                   causaFallecimiento: remote.causaFallecimiento,
                   ubicacionPrevia: remote.ubicacionPrevia || existing.location,
                   lastCensusDate: remote.lastCensusDate,
+                  updatedAt: remote.updatedAt || new Date().toISOString(),
+                  updatedBy: remote.updatedBy,
                 });
               }
 
               const gRec = await db.gateraRecords.where("microchip").equals(chip).first();
               if (gRec?.id) {
                 await db.gateraRecords.update(gRec.id, {
-                  ubicacion: remote.location,
-                  status: remote.status,
+                  nombre: remote.name || gRec.nombre,
+                  ubicacion: remote.location || gRec.ubicacion,
+                  status: remote.status || gRec.status,
+                  color: remote.color || gRec.color,
+                  photoUrl: remote.photoUrl || gRec.photoUrl,
+                  condicionCorporal: remote.condicionCorporal || gRec.condicionCorporal,
+                  estadoSalud: remote.estadoSalud || gRec.estadoSalud,
+                  medicacion: remote.notes || gRec.medicacion,
+                  observacionesMedicas: remote.observacionesMedicas || gRec.observacionesMedicas,
+                  medicoVeterinario: remote.medicoVeterinario || gRec.medicoVeterinario,
                   fechaFallecimiento: remote.fechaFallecimiento,
                   causaFallecimiento: remote.causaFallecimiento,
-                  ubicacionPrevia: remote.ubicacionPrevia || existing.location,
+                  ubicacionPrevia: remote.ubicacionPrevia || gRec.ubicacion,
                 });
               }
 

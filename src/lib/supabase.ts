@@ -237,6 +237,22 @@ export async function deleteStaffFromSupabase(id: string): Promise<void> {
 }
 
 /**
+/**
+ * Detectar tipo de dispositivo de forma amigable (PC vs Móvil / Tablet)
+ */
+export function getHumanReadableDevice(): string {
+  if (typeof window === "undefined") return "💻 Servidor";
+  const ua = navigator.userAgent;
+  if (/Android/i.test(ua)) return "📱 Móvil Android";
+  if (/iPhone/i.test(ua)) return "📱 iPhone (iOS)";
+  if (/iPad/i.test(ua)) return "📱 iPad (iOS)";
+  if (/Windows/i.test(ua)) return "💻 PC Windows";
+  if (/Macintosh|Mac OS/i.test(ua)) return "💻 Mac (macOS)";
+  if (/Linux/i.test(ua)) return "💻 PC Linux";
+  return "📱 Web Móvil / PC";
+}
+
+/**
  * 2. PRESENCIA EN VIVO / MONITOREO DE QUIÉN ESTÁ CONECTADO
  */
 export async function recordStaffPresence(member: StaffMember): Promise<void> {
@@ -250,7 +266,7 @@ export async function recordStaffPresence(member: StaffMember): Promise<void> {
       role: member.role,
       area: "gatera",
       last_seen: new Date().toISOString(),
-      device_info: typeof window !== "undefined" ? navigator.userAgent.slice(0, 80) : undefined,
+      device_info: getHumanReadableDevice(),
     };
 
     await client
@@ -262,18 +278,18 @@ export async function recordStaffPresence(member: StaffMember): Promise<void> {
 }
 
 /**
- * Obtener personal conectado recientemente (últimos 10 minutos)
+ * Obtener personal conectado recientemente (últimos 5 minutos)
  */
 export async function getConnectedStaff(): Promise<ConnectedStaff[]> {
   const client = getSupabaseClient();
   if (!client) return [];
 
   try {
-    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
     const { data, error } = await client
       .from("staff_presence")
       .select("*")
-      .gte("last_seen", tenMinutesAgo)
+      .gte("last_seen", fiveMinutesAgo)
       .order("last_seen", { ascending: false });
 
     if (error || !data) return [];
@@ -281,14 +297,14 @@ export async function getConnectedStaff(): Promise<ConnectedStaff[]> {
     const now = Date.now();
     return data.map((row: any) => {
       const lastSeenTime = new Date(row.last_seen).getTime();
-      const isOnlineNow = now - lastSeenTime < 3 * 60 * 1000; // Activo en los últimos 3 min
+      const isOnlineNow = now - lastSeenTime < 2 * 60 * 1000; // Activo en los últimos 2 min
       return {
         staff_id: row.staff_id,
         staff_name: row.staff_name,
         role: row.role,
         area: "gatera",
         last_seen: row.last_seen,
-        device_info: row.device_info,
+        device_info: row.device_info || "💻 Dispositivo",
         isOnlineNow,
       };
     });
@@ -296,6 +312,35 @@ export async function getConnectedStaff(): Promise<ConnectedStaff[]> {
     console.warn("Error getting connected staff:", err);
     return [];
   }
+}
+
+/**
+ * Loop de monitoreo de presencia (Heartbeat cada 15s)
+ */
+export function startPresenceMonitoring(
+  currentUser: StaffMember | null,
+  onConnectedStaffChange: (staff: ConnectedStaff[]) => void
+): () => void {
+  let isStopped = false;
+
+  const tick = async () => {
+    if (isStopped) return;
+    if (currentUser && currentUser.id) {
+      await recordStaffPresence(currentUser);
+    }
+    const connected = await getConnectedStaff();
+    if (!isStopped) {
+      onConnectedStaffChange(connected);
+    }
+  };
+
+  tick();
+  const intervalId = setInterval(tick, 15000);
+
+  return () => {
+    isStopped = true;
+    clearInterval(intervalId);
+  };
 }
 
 /**
@@ -497,6 +542,30 @@ export async function syncAnimalToSupabase(animal: Animal): Promise<boolean> {
   }
 }
 
+/**
+ * Eliminar un animal de Supabase Cloud de forma permanente
+ */
+export async function deleteAnimalFromSupabase(microchip: string): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client || !microchip) return false;
+
+  try {
+    const { error } = await client
+      .from("animals")
+      .delete()
+      .eq("microchip", microchip);
+
+    if (error) {
+      console.warn("Supabase delete warning:", error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn("Error deleting animal from Supabase:", err);
+    return false;
+  }
+}
+
 export async function syncAllLocalToSupabase(): Promise<{ synced: number; total: number }> {
   const client = getSupabaseClient();
   if (!client) return { synced: 0, total: 0 };
@@ -676,6 +745,216 @@ export async function fetchAuditLogsFromSupabase(): Promise<any[]> {
     return data;
   } catch (err) {
     return [];
+  }
+}
+
+/**
+ * 6. SINCRONIZACIÓN EN TIEMPO REAL (WEBSOCKETS DE SUPABASE)
+ * Escucha cambios en tiempo real desde Supabase para todas las tablas:
+ * animals, shift_tasks, staff_presence, audit_logs
+ */
+export function setupRealtimeDatabaseSync(
+  onDataChanged?: (entity: string, data: any) => void
+): () => void {
+  const client = getSupabaseClient();
+  if (!client) return () => {};
+
+  try {
+    const channel = client
+      .channel("cba_realtime_sync_channel")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "animals" },
+        async (payload) => {
+          try {
+            if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
+              const row: any = payload.new;
+              const attrs = row.attributes || {};
+              const isFallecido =
+                row.status === "fallecido" ||
+                attrs.location?.toUpperCase().trim() === "FALLECIDO";
+
+              const animalData: Animal = {
+                microchip: row.microchip,
+                shortChip: attrs.shortChip || (row.microchip.length > 7 ? row.microchip.slice(-7) : row.microchip),
+                name: row.name,
+                species: "gato",
+                breed: row.breed || "DPC",
+                gender: row.sex === "hembra" ? "hembra" : "macho",
+                sexoCode: row.sex === "hembra" ? "HFA" : "MFA",
+                location: isFallecido ? "FALLECIDO" : (attrs.location || "GATERA"),
+                status: isFallecido ? "fallecido" : (row.status || "activo"),
+                notes: row.notes,
+                photoUrl: row.photo_url || attrs.photoUrl || undefined,
+                hc: attrs.hc,
+                isFeral: Boolean(attrs.isFeral),
+                color: attrs.color,
+                tipoIngreso: attrs.tipoIngreso || "RES",
+                edad: attrs.edad,
+                condicionCorporal: attrs.condicionCorporal,
+                estadoSalud: attrs.estadoSalud,
+                observacionesMedicas: row.notes,
+                requiereSeguimiento: attrs.requiereSeguimiento,
+                medicoVeterinario: attrs.medicoVeterinario,
+                retroviralStatus: row.retroviral_status || attrs.retroviralStatus,
+                vifStatus: row.vif_status || attrs.vifStatus,
+                felvStatus: row.felv_status || attrs.felvStatus,
+                fechaFallecimiento: attrs.fechaFallecimiento,
+                causaFallecimiento: attrs.causaFallecimiento,
+                ubicacionPrevia: attrs.ubicacionPrevia,
+                lastCensusDate: attrs.lastCensusDate,
+                createdBy: attrs.createdBy,
+                createdById: attrs.createdById,
+                createdAt: attrs.createdAt,
+                updatedBy: attrs.updatedBy,
+                updatedById: attrs.updatedById,
+                updatedAt: attrs.updatedAt || new Date().toISOString(),
+              };
+
+              const chip = animalData.microchip.trim().toUpperCase();
+              const existing = await db.animals.where("microchip").equals(chip).first();
+              if (existing?.id) {
+                await db.animals.update(existing.id, animalData);
+              } else {
+                await db.animals.put(animalData);
+              }
+
+              // Actualizar gateraRecords
+              const catRec = await db.gateraRecords.where("microchip").equals(chip).first();
+              if (catRec?.id) {
+                await db.gateraRecords.update(catRec.id, {
+                  nombre: animalData.name,
+                  ubicacion: animalData.location,
+                  status: animalData.status,
+                  color: animalData.color,
+                  photoUrl: animalData.photoUrl,
+                  condicionCorporal: animalData.condicionCorporal,
+                  estadoSalud: animalData.estadoSalud,
+                  medicacion: animalData.notes || "Ninguno",
+                  observacionesMedicas: animalData.observacionesMedicas,
+                  medicoVeterinario: animalData.medicoVeterinario,
+                });
+              } else {
+                await db.gateraRecords.put({
+                  microchip: chip,
+                  shortChip: animalData.shortChip || chip.slice(-7),
+                  nombre: animalData.name,
+                  color: animalData.color || "",
+                  sexo: (animalData.gender === "hembra" ? "hembra" : "macho"),
+                  sexoCode: animalData.sexoCode || "MFA",
+                  grupoEdad: "adulto",
+                  raza: animalData.breed || "DPC",
+                  edad: animalData.edad || "",
+                  tipoIngreso: animalData.tipoIngreso || "RES",
+                  condicionCorporal: animalData.condicionCorporal || "",
+                  estadoSalud: animalData.estadoSalud || "",
+                  ubicacion: animalData.location,
+                  status: animalData.status,
+                  pendientes: animalData.notes || "",
+                  hc: animalData.hc || "",
+                  isFeral: animalData.isFeral || false,
+                  observacionesMedicas: animalData.observacionesMedicas || "",
+                  medicoVeterinario: animalData.medicoVeterinario || "",
+                  requiereSeguimiento: animalData.requiereSeguimiento || "",
+                  tipoSeguimiento: "TRATAMIENTO",
+                  medicacion: animalData.notes || "Ninguno",
+                  descripcion: animalData.name,
+                  photoUrl: animalData.photoUrl,
+                  sistema: "TEGUMEN",
+                  fechaFinal: "HNI",
+                  tipo: "FS",
+                });
+              }
+
+              if (typeof window !== "undefined") {
+                window.dispatchEvent(new CustomEvent("cba_sync_update", { detail: { entity: "animal", data: animalData } }));
+              }
+              if (onDataChanged) onDataChanged("animal", animalData);
+            } else if (payload.eventType === "DELETE") {
+              const oldRow: any = payload.old;
+              if (oldRow?.microchip) {
+                const chip = oldRow.microchip.trim().toUpperCase();
+                await db.animals.where("microchip").equals(chip).delete();
+                await db.gateraRecords.where("microchip").equals(chip).delete();
+                if (typeof window !== "undefined") {
+                  window.dispatchEvent(new CustomEvent("cba_sync_update", { detail: { entity: "animal_deleted", chip } }));
+                }
+              }
+            }
+          } catch (e) {
+            console.warn("Error processing realtime animal sync:", e);
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "shift_tasks" },
+        async (payload) => {
+          try {
+            if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
+              const r: any = payload.new;
+              const task: ShiftTask = {
+                id: r.client_task_id || r.id,
+                kardexId: r.kardex_id || undefined,
+                animalName: r.animal_name,
+                species: "gato",
+                microchip: r.microchip,
+                location: r.location,
+                medication: r.medication,
+                shift: r.shift as any,
+                laborType: r.labor_type as any,
+                isCompleted: Boolean(r.is_completed),
+                completedAt: r.completed_at || undefined,
+                completedBy: r.completed_by || undefined,
+                isFeral: Boolean(r.is_feral),
+                notes: r.notes || undefined,
+                area: "gatera",
+                assignedTo: r.assigned_to || undefined,
+                assignedRole: r.assigned_role as any,
+                dosisTotales: r.dosis_totales,
+                dosisAplicadas: r.dosis_aplicadas,
+                dosisFaltantes: r.dosis_faltantes,
+              };
+
+              const existing = await db.shiftTasks
+                .where("microchip")
+                .equals(task.microchip)
+                .filter((t) => t.shift === task.shift && t.medication === task.medication)
+                .first();
+
+              if (existing?.id) {
+                await db.shiftTasks.update(existing.id, task);
+              } else {
+                await db.shiftTasks.put(task);
+              }
+
+              if (typeof window !== "undefined") {
+                window.dispatchEvent(new CustomEvent("cba_sync_update", { detail: { entity: "task", data: task } }));
+              }
+              if (onDataChanged) onDataChanged("task", task);
+            }
+          } catch (e) {
+            console.warn("Error processing realtime task sync:", e);
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "staff_presence" },
+        () => {
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("cba_presence_update"));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      client.removeChannel(channel);
+    };
+  } catch (err) {
+    console.warn("Error setting up Supabase realtime channel:", err);
+    return () => {};
   }
 }
 
