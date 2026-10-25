@@ -18,6 +18,7 @@ export const MagicLinkModal: React.FC<MagicLinkModalProps> = ({
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
   const [selectedStaff, setSelectedStaff] = useState<StaffMember | null>(null);
   const [copied, setCopied] = useState(false);
+  const [messageCopied, setMessageCopied] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -43,8 +44,6 @@ export const MagicLinkModal: React.FC<MagicLinkModalProps> = ({
   const magicUrl = selectedStaff
     ? `${origin}/?token=${selectedStaff.token}&user=${selectedStaff.id}&role=${selectedStaff.role}&area=${selectedStaff.area}&name=${encodeURIComponent(selectedStaff.name)}${sbParams}`
     : "";
-
-  const [messageCopied, setMessageCopied] = useState(false);
 
   const handleCopy = () => {
     if (!magicUrl) return;

@@ -56,10 +56,18 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const [specialty, setSpecialty] = useState("");
   const [phone, setPhone] = useState("");
 
-  // Estado para verificación de PIN al cambiar de usuario
   const [staffPendingPin, setStaffPendingPin] = useState<StaffMember | null>(null);
   const [enteredPin, setEnteredPin] = useState("");
   const [pinError, setPinError] = useState<string | null>(null);
+
+  // Estado para edición de datos del funcionario
+  const [editingMember, setEditingMember] = useState<StaffMember | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editRole, setEditRole] = useState<"veterinario" | "auxiliar" | "operario">("veterinario");
+  const [editSpecialty, setEditSpecialty] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editPin, setEditPin] = useState("");
 
   const refreshStaff = async (isManual = false) => {
     setLoading(true);
@@ -156,14 +164,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       onClose();
     }, 1200);
   };
-
-  const [editingMember, setEditingMember] = useState<StaffMember | null>(null);
-  const [editName, setEditName] = useState("");
-  const [editRole, setEditRole] = useState<"veterinario" | "auxiliar" | "operario">("veterinario");
-  const [editSpecialty, setEditSpecialty] = useState("");
-  const [editEmail, setEditEmail] = useState("");
-  const [editPhone, setEditPhone] = useState("");
-  const [editPin, setEditPin] = useState("");
 
   const handleStartEdit = (member: StaffMember) => {
     setEditingMember(member);
