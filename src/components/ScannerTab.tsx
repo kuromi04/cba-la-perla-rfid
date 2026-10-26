@@ -341,13 +341,14 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
     if (existing?.id) {
       await db.census.update(existing.id, {
         microchip: cleanChip.length >= existing.microchip.length ? cleanChip : existing.microchip,
-        animalName: currentAnimal.name,
-        species: currentAnimal.species,
-        location: currentAnimal.location,
+        animalName: currentAnimal.name || "Felino",
+        species: currentAnimal.species || "gato",
+        location: currentAnimal.location || "GATERA",
         scannedAt: nowIso,
         scannedBy: currentUser?.name || "Operario de Campo",
         treatmentCount,
         area,
+        photoUrl: currentAnimal.photoUrl || existing.photoUrl,
       });
 
       // Eliminar cualquier otro registro residual con el mismo chip
@@ -360,13 +361,14 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
     } else {
       await db.census.add({
         microchip: cleanChip,
-        animalName: currentAnimal.name,
-        species: currentAnimal.species,
-        location: currentAnimal.location,
+        animalName: currentAnimal.name || "Felino",
+        species: currentAnimal.species || "gato",
+        location: currentAnimal.location || "GATERA",
         scannedAt: nowIso,
         scannedBy: currentUser?.name || "Operario de Campo",
         treatmentCount,
         area,
+        photoUrl: currentAnimal.photoUrl,
       });
     }
 
@@ -579,6 +581,12 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
           updatedById: currentUser?.id || "anon_user",
           updatedAt: nowIso,
         });
+      }
+
+      // 3. Actualizar db.census
+      db.census.where("microchip").equals(cleanChip).modify({ photoUrl: base64 }).catch(() => {});
+      if (cleanChip.length > 7) {
+        db.census.where("microchip").equals(cleanChip.slice(-7)).modify({ photoUrl: base64 }).catch(() => {});
       }
 
       const updated = {

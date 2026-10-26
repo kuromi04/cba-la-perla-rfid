@@ -548,6 +548,12 @@ export async function syncAnimalsBidirectional(): Promise<{ pulled: number; push
           );
           const conditionChanged = Boolean(remote.condicionCorporal && remote.condicionCorporal !== existing.condicionCorporal);
           const healthChanged = Boolean(remote.estadoSalud && remote.estadoSalud !== existing.estadoSalud);
+          const censusChanged = Boolean(remote.lastCensusDate && remote.lastCensusDate !== existing.lastCensusDate);
+          const updateChanged = Boolean(
+            (remote.updatedAt && remote.updatedAt !== existing.updatedAt) ||
+            (remote.updatedBy && remote.updatedBy !== existing.updatedBy) ||
+            (remote.createdBy && remote.createdBy !== existing.createdBy)
+          );
 
           if (
             locationChanged ||
@@ -558,6 +564,8 @@ export async function syncAnimalsBidirectional(): Promise<{ pulled: number; push
             retroChanged ||
             conditionChanged ||
             healthChanged ||
+            censusChanged ||
+            updateChanged ||
             (isRemoteFallecido && !isLocalFallecido)
           ) {
             // Garantizar que la foto nunca se pierda
@@ -612,9 +620,37 @@ export async function syncAnimalsBidirectional(): Promise<{ pulled: number; push
             if (isRemoteFallecido) {
               db.census.where("microchip").equals(chip).delete().catch(() => {});
               db.shiftTasks.where("microchip").equals(chip).delete().catch(() => {});
-            } else if (locationChanged) {
-              db.census.where("microchip").equals(chip).modify({ location: remote.location }).catch(() => {});
-              db.shiftTasks.where("microchip").equals(chip).modify({ location: remote.location }).catch(() => {});
+            } else {
+              if (remote.lastCensusDate) {
+                db.census.where("microchip").equals(chip).first().then((ec) => {
+                  if (!ec) {
+                    db.census.add({
+                      microchip: chip,
+                      shortChip,
+                      animalName: remote.name || "Felino",
+                      species: "gato",
+                      location: remote.location || "GATERA",
+                      scannedAt: remote.lastCensusDate!,
+                      scannedBy: remote.updatedBy || remote.createdBy || remote.medicoVeterinario || "Personal CBA",
+                      treatmentCount: 0,
+                      area: "gatera",
+                      photoUrl: resolvedPhoto,
+                    }).catch(() => {});
+                  } else {
+                    const patch: any = {};
+                    if (!ec.photoUrl && resolvedPhoto) patch.photoUrl = resolvedPhoto;
+                    if (locationChanged) patch.location = remote.location;
+                    if (Object.keys(patch).length > 0 && ec.id) {
+                      db.census.update(ec.id, patch).catch(() => {});
+                    }
+                  }
+                }).catch(() => {});
+              } else if (locationChanged) {
+                db.census.where("microchip").equals(chip).modify({ location: remote.location }).catch(() => {});
+              }
+              if (locationChanged) {
+                db.shiftTasks.where("microchip").equals(chip).modify({ location: remote.location }).catch(() => {});
+              }
             }
 
             pulled++;

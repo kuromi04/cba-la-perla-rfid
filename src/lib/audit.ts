@@ -59,7 +59,39 @@ export async function recordAudit(data: {
 export async function getAuditLogs(limit = 200): Promise<AuditLogEntry[]> {
   try {
     const logs = await db.auditLogs.orderBy("timestamp").reverse().limit(limit).toArray();
-    return logs;
+
+    // Complementar con actividades registradas en la tabla de animales para que la actividad de todos los dispositivos sea visible
+    const animals = await db.animals.toArray();
+    const existingKeys = new Set(logs.map((l) => `${l.microchip}_${l.timestamp?.substring(0, 16)}`));
+
+    for (const a of animals) {
+      const actor = a.updatedBy || a.createdBy || a.medicoVeterinario;
+      const isSystem = !actor || actor === "Personal CBA La Perla" || actor === "anon_user";
+      const ts = a.updatedAt || a.createdAt || a.lastCensusDate;
+
+      if (!isSystem && ts && a.microchip) {
+        const key = `${a.microchip}_${ts.substring(0, 16)}`;
+        if (!existingKeys.has(key)) {
+          logs.push({
+            timestamp: ts,
+            userId: a.updatedById || a.createdById || actor,
+            userName: actor,
+            userRole: "veterinario",
+            action: a.lastCensusDate ? "CENSO_CONFIRMADO" : (a.photoUrl ? "FOTO_SUBIDA" : "MODIFICACION_ANIMAL"),
+            microchip: a.microchip,
+            animalName: a.name,
+            location: a.location,
+            details: a.lastCensusDate
+              ? `Censo y verificación realizada por ${actor}: ${a.name} en ${a.location}`
+              : `Ficha clínica y datos actualizados por ${actor}: ${a.name} en ${a.location}`,
+          });
+          existingKeys.add(key);
+        }
+      }
+    }
+
+    logs.sort((a, b) => (b.timestamp || "").localeCompare(a.timestamp || ""));
+    return logs.slice(0, limit);
   } catch (err) {
     console.warn("Error obteniendo logs de auditoría:", err);
     return [];
@@ -175,20 +207,53 @@ export async function getAuditStatsByUser(): Promise<UserAuditStat[]> {
       }
     }
 
-    // 3. Cruzar con animales creados en la base de datos (por si no tenían log directo)
+    // 3. Cruzar con animales creados o actualizados en la base de datos (por si no tenían log directo)
     const allAnimals = await db.animals.toArray();
     for (const animal of allAnimals) {
-      if (animal.createdBy) {
-        const key = animal.createdById || animal.createdBy;
-        const stat = getOrCreate(key, animal.createdBy, "veterinario");
-        if (!stat.registeredChips.includes(animal.microchip)) {
+      const actorName = animal.updatedBy || animal.createdBy || animal.medicoVeterinario;
+      const isSystemDefault =
+        !actorName ||
+        actorName === "Personal CBA La Perla" ||
+        actorName === "anon_user";
+
+      if (!isSystemDefault) {
+        const key = animal.updatedById || animal.createdById || actorName;
+        const stat = getOrCreate(key, actorName, "veterinario");
+        if (animal.microchip && !stat.registeredChips.includes(animal.microchip)) {
           stat.registeredChips.push(animal.microchip);
-          if (stat.registeredCount < stat.registeredChips.length) {
-            stat.registeredCount = stat.registeredChips.length;
-          }
         }
-        if (animal.createdAt && animal.createdAt > stat.lastActive) {
-          stat.lastActive = animal.createdAt;
+        if (animal.lastCensusDate) {
+          stat.censusCount += 1;
+        } else if (animal.createdAt && animal.createdAt === animal.updatedAt) {
+          stat.registeredCount += 1;
+        } else {
+          stat.modifiedCount += 1;
+        }
+        stat.totalActions += 1;
+
+        const mostRecent = animal.updatedAt || animal.createdAt || animal.lastCensusDate;
+        if (mostRecent && mostRecent > stat.lastActive) {
+          stat.lastActive = mostRecent;
+        }
+
+        // Incorporar a los logs recientes del usuario si tiene espacio
+        if (stat.recentLogs.length < 15 && animal.microchip) {
+          const alreadyLogged = stat.recentLogs.some((l) => l.microchip === animal.microchip);
+          if (!alreadyLogged) {
+            stat.recentLogs.push({
+              timestamp: mostRecent || new Date().toISOString(),
+              userId: key,
+              userName: actorName,
+              userRole: "veterinario",
+              action: animal.lastCensusDate ? "CENSO_CONFIRMADO" : "MODIFICACION_ANIMAL",
+              microchip: animal.microchip,
+              animalName: animal.name,
+              location: animal.location,
+              details: animal.lastCensusDate
+                ? `Censo verificado y confirmado para ${animal.name} (${animal.microchip}) en ${animal.location}`
+                : `Ficha clínica y fotografía actualizada para ${animal.name} (${animal.microchip})`,
+            });
+          }
         }
       }
     }

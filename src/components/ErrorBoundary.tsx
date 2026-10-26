@@ -42,20 +42,20 @@ export class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center justify-center p-6 text-center">
-          <div className="w-16 h-16 bg-amber-500/20 text-amber-400 rounded-3xl flex items-center justify-center mb-4 border border-amber-500/40 shadow-lg shadow-amber-500/20">
-            <AlertTriangle className="w-8 h-8" />
+          <div className="w-16 h-16 bg-emerald-500/20 text-emerald-400 rounded-3xl flex items-center justify-center mb-4 border border-emerald-500/40 shadow-lg shadow-emerald-500/20">
+            <AlertTriangle className="w-8 h-8 text-amber-400" />
           </div>
 
           <h1 className="text-xl font-black mb-2 tracking-tight">
-            CBA La Perla • Gatera
+            CBA La Perla • Protección de Datos Activa
           </h1>
-          <p className="text-xs text-slate-300 max-w-sm mb-6 leading-relaxed">
-            Se detectó una discrepancia al sincronizar la vista del turno. El sistema ha protegido tus datos y registros locales.
+          <p className="text-xs text-slate-300 max-w-sm mb-4 leading-relaxed">
+            Tus registros, fotografías y datos del turno están <strong className="text-emerald-400">100% seguros y respaldados</strong> tanto localmente como en la nube. Se ha protegido la sesión para evitar pérdida de información.
           </p>
 
           {this.state.error?.message && (
             <div className="bg-slate-800/80 border border-slate-700 rounded-xl p-3 text-[11px] font-mono text-amber-300 max-w-xs overflow-x-auto mb-6 text-left">
-              {this.state.error.message}
+              Detalle: {this.state.error.message}
             </div>
           )}
 

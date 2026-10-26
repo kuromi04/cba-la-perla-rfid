@@ -415,6 +415,7 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
         retroviralStatus: computedRetro,
         vifStatus,
         felvStatus,
+        photoUrl: resolvedPhoto,
       };
 
       if (formattedLocation === "FALLECIDO") {

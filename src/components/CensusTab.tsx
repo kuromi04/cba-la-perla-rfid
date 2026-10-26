@@ -61,20 +61,20 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
   const openPurgeModal = async () => {
     const allCats = await db.gateraRecords.toArray();
     const allCensus = await db.census.where("area").equals("gatera").toArray();
-    const censusedChips = new Set(allCensus.map((c) => c.microchip.trim()));
+    const censusedChips = new Set(allCensus.map((c) => (c.microchip || "").trim()));
 
     let feralCount = 0;
     let censusedCount = 0;
     let obsoleteCount = 0;
 
     for (const cat of allCats) {
-      const chip = cat.microchip.trim();
+      const chip = (cat.microchip || "").trim();
       const isFeral = Boolean(
         cat.isFeral ||
         (cat.pendientes && cat.pendientes.toUpperCase().includes("FERAL")) ||
         (cat.descripcion && cat.descripcion.toUpperCase().includes("FERAL"))
       );
-      const isCensused = censusedChips.has(chip);
+      const isCensused = Boolean(chip && censusedChips.has(chip));
 
       if (isFeral) {
         feralCount++;
@@ -140,29 +140,89 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
         a.status?.toLowerCase().trim() === "fallecido"
     );
 
-    // Mapa de fotos e información clínica de animales
+    // Mapa de fotos e información clínica de animales (indexado por chip completo y últimos 7 dígitos)
     const animalMap = new Map<string, Animal>();
+    const photoMap = new Map<string, string>();
+    const gateraList = await db.gateraRecords.toArray();
+
+    for (const g of gateraList) {
+      if (g.photoUrl) {
+        const clean = (g.microchip || "").trim().toUpperCase();
+        if (clean) {
+          photoMap.set(clean, g.photoUrl);
+          if (clean.length > 7) photoMap.set(clean.slice(-7), g.photoUrl);
+        }
+        if (g.shortChip) photoMap.set(g.shortChip.trim().toUpperCase(), g.photoUrl);
+      }
+    }
+
     for (const a of animalsList) {
-      if (a.microchip) animalMap.set(a.microchip.trim().toUpperCase(), a);
+      const clean = (a.microchip || "").trim().toUpperCase();
+      if (clean) {
+        animalMap.set(clean, a);
+        if (clean.length > 7) animalMap.set(clean.slice(-7), a);
+      }
       if (a.shortChip) animalMap.set(a.shortChip.trim().toUpperCase(), a);
+      if (a.photoUrl) {
+        if (clean) {
+          photoMap.set(clean, a.photoUrl);
+          if (clean.length > 7) photoMap.set(clean.slice(-7), a.photoUrl);
+        }
+        if (a.shortChip) photoMap.set(a.shortChip.trim().toUpperCase(), a.photoUrl);
+      }
     }
 
     // Lecturas activas del censo (excluyendo fallecidos) con foto asociada
     list = list
       .filter(
         (c) =>
+          Boolean(c) &&
           (c.area === "gatera" || !c.area) &&
-          c.location?.toUpperCase().trim() !== "FALLECIDO"
+          (c.location || "").toUpperCase().trim() !== "FALLECIDO"
       )
       .map((item) => {
-        const clean = item.microchip.trim().toUpperCase();
+        const clean = (item.microchip || "").trim().toUpperCase();
         const short = item.shortChip || (clean.length > 7 ? clean.slice(-7) : clean);
-        const match = animalMap.get(clean) || animalMap.get(short);
+        const match = animalMap.get(clean) || (short ? animalMap.get(short) : undefined);
+        const resolvedPhoto =
+          item.photoUrl ||
+          photoMap.get(clean) ||
+          (short ? photoMap.get(short) : undefined) ||
+          match?.photoUrl;
         return {
           ...item,
-          photoUrl: item.photoUrl || match?.photoUrl,
+          microchip: item.microchip || clean,
+          animalName: item.animalName || match?.name || "Felino",
+          location: item.location || match?.location || "GATERA",
+          photoUrl: resolvedPhoto,
         };
       });
+
+    // Complementar con cualquier felino activo que tenga fecha de censo registrada en la base de datos
+    const censusedChipSet = new Set(list.map((c) => (c.microchip || "").trim().toUpperCase()));
+    for (const a of activeAnimals) {
+      const clean = (a.microchip || "").trim().toUpperCase();
+      if (a.lastCensusDate && clean && !censusedChipSet.has(clean)) {
+        const short = a.shortChip || (clean.length > 7 ? clean.slice(-7) : clean);
+        const resolvedPhoto =
+          a.photoUrl ||
+          photoMap.get(clean) ||
+          (short ? photoMap.get(short) : undefined);
+        list.push({
+          microchip: a.microchip,
+          shortChip: short,
+          animalName: a.name || "Felino",
+          species: "gato",
+          location: a.location || "GATERA",
+          scannedAt: a.lastCensusDate,
+          scannedBy: a.updatedBy || a.createdBy || a.medicoVeterinario || "Personal CBA",
+          treatmentCount: 0,
+          area: "gatera",
+          photoUrl: resolvedPhoto,
+        });
+        censusedChipSet.add(clean);
+      }
+    }
 
     setCensusList(list);
     setDeceasedList(deceasedAnimals);
@@ -401,20 +461,24 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
     setTimeout(() => setSyncMessage(null), 4000);
   };
 
+  const qSearch = (searchTerm || "").toLowerCase().trim();
   const filteredCensus = censusList.filter(
     (c) =>
-      c.animalName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.microchip.includes(searchTerm) ||
-      c.location.toLowerCase().includes(searchTerm.toLowerCase())
+      Boolean(c) &&
+      ((c.animalName || "").toLowerCase().includes(qSearch) ||
+        (c.microchip || "").includes(qSearch) ||
+        (c.location || "").toLowerCase().includes(qSearch))
   );
 
+  const qDeceased = (deceasedSearch || "").toLowerCase().trim();
   const filteredDeceased = deceasedList.filter(
     (a) =>
-      a.name.toLowerCase().includes(deceasedSearch.toLowerCase()) ||
-      a.microchip.includes(deceasedSearch) ||
-      (a.hc && a.hc.toLowerCase().includes(deceasedSearch.toLowerCase())) ||
-      (a.ubicacionPrevia && a.ubicacionPrevia.toLowerCase().includes(deceasedSearch.toLowerCase())) ||
-      (a.causaFallecimiento && a.causaFallecimiento.toLowerCase().includes(deceasedSearch.toLowerCase()))
+      Boolean(a) &&
+      ((a.name || "").toLowerCase().includes(qDeceased) ||
+        (a.microchip || "").includes(qDeceased) ||
+        (Boolean(a.hc) && (a.hc || "").toLowerCase().includes(qDeceased)) ||
+        (Boolean(a.ubicacionPrevia) && (a.ubicacionPrevia || "").toLowerCase().includes(qDeceased)) ||
+        (Boolean(a.causaFallecimiento) && (a.causaFallecimiento || "").toLowerCase().includes(qDeceased)))
   );
 
   return (
