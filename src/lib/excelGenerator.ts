@@ -722,35 +722,82 @@ export function normalizeStaffName(rawName?: string | null): string {
   if (upper.includes("YANETH") && upper.includes("CALD")) return "Yaneth Esperanza Caldón Manquillo";
   if (upper.includes("GHINA") || upper.includes("COMBARIZA") || upper.includes("COMBRIZA")) return "Ghina Marcela Combariza";
   if (upper.includes("DANIELA") && upper.includes("MONSALVE")) return "Daniela Monsalve Arcila";
+  if (upper.includes("CAROLINA") && upper.includes("FRANCO")) return "Dra. Carolina Franco Gallego";
+  if (upper.includes("ANDRES") && upper.includes("CH")) return "Andres Ch";
   if (upper.includes("ADMINISTRADOR")) return "Dr. Administrador Maestro";
   if (clean === "Personal CBA La Perla" || clean === "anon_user") return "Personal de Turno CBA";
 
   return clean;
 }
 
-/**
- * Exporta en Excel (.xlsx) la información suministrada por cada usuario de los escaneos diarios y felinos fallecidos
- */
-export async function exportUserScansAndDeceasedExcel(
-  options: UserScanDeceasedExportOptions = {}
-): Promise<{ totalScans: number; totalDeceased: number; fileName: string }> {
-  const { userFilter = "all", dateFilter = "all" } = options;
+export interface ScanItem {
+  timestamp: string;
+  date: string;
+  userName: string;
+  userRole: string;
+  microchip: string;
+  shortChip: string;
+  hc: string;
+  name: string;
+  location: string;
+  status: string;
+  condicionCorporal: string;
+  estadoSalud: string;
+  retroviralStatus: string;
+  isFeral: boolean;
+  medicacion: string;
+  hasPhoto: boolean;
+  observaciones: string;
+}
 
+export interface DeceasedItem {
+  fecha: string;
+  userName: string;
+  microchip: string;
+  shortChip: string;
+  hc: string;
+  name: string;
+  sexo: string;
+  raza: string;
+  color: string;
+  ubicacionPrevia: string;
+  causa: string;
+  isFeral: boolean;
+  hasPhoto: boolean;
+  observaciones: string;
+}
+
+export interface UserActivityStatsItem {
+  id: string;
+  name: string;
+  role: string;
+  count: number;
+  scans: number;
+  deceased: number;
+  photos: number;
+  firstScan: string;
+  lastScan: string;
+}
+
+/**
+ * Obtiene y consolida toda la actividad de escaneos y fallecidos de IndexedDB
+ */
+export async function getConsolidatedActivityData(
+  dateFilter: "all" | "today" | "yesterday" | "week" = "all"
+) {
   const now = new Date();
   const todayStr = now.toISOString().split("T")[0];
   const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   const yesterdayStr = yesterday.toISOString().split("T")[0];
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
 
-  // 1. Obtener datos de IndexedDB
-  const [censusList, animalsList, gateraList, auditLogs] = await Promise.all([
+  const [censusList, animalsList, gateraList, staffList] = await Promise.all([
     db.census.toArray(),
     db.animals.toArray(),
     db.gateraRecords.toArray(),
-    db.auditLogs.toArray(),
+    db.staff.toArray().catch(() => []),
   ]);
 
-  // Mapa auxiliar para completar datos clínicos por chip
   const animalMap = new Map<string, any>();
   for (const a of animalsList) {
     const chip = (a.microchip || "").trim().toUpperCase();
@@ -762,31 +809,10 @@ export async function exportUserScansAndDeceasedExcel(
     if (chip && !animalMap.has(chip)) animalMap.set(chip, g);
   }
 
-  // 2. Consolidar todos los escaneos diarios con su usuario responsable
-  interface ScanItem {
-    timestamp: string;
-    date: string;
-    userName: string;
-    userRole: string;
-    microchip: string;
-    shortChip: string;
-    hc: string;
-    name: string;
-    location: string;
-    status: string;
-    condicionCorporal: string;
-    estadoSalud: string;
-    retroviralStatus: string;
-    isFeral: boolean;
-    medicacion: string;
-    hasPhoto: boolean;
-    observaciones: string;
-  }
-
   const allScans: ScanItem[] = [];
   const registeredScansKey = new Set<string>();
 
-  // A. Desde la tabla censo
+  // A. Desde la tabla censo (escaneos en campo con lector W91A)
   for (const c of censusList) {
     const rawChip = (c.microchip || "").trim().toUpperCase();
     const ts = c.scannedAt || todayStr;
@@ -818,10 +844,10 @@ export async function exportUserScansAndDeceasedExcel(
     }
   }
 
-  // B. Desde animales actualizados o con lastCensusDate
+  // B. Desde animales con lastCensusDate
   for (const a of animalsList) {
     const rawChip = (a.microchip || "").trim().toUpperCase();
-    const ts = a.lastCensusDate || a.updatedAt;
+    const ts = a.lastCensusDate;
     if (ts) {
       const date = ts.split("T")[0];
       const key = `${rawChip}_${date}`;
@@ -851,24 +877,7 @@ export async function exportUserScansAndDeceasedExcel(
     }
   }
 
-  // 3. Consolidar felinos fallecidos con su usuario responsable
-  interface DeceasedItem {
-    fecha: string;
-    userName: string;
-    microchip: string;
-    shortChip: string;
-    hc: string;
-    name: string;
-    sexo: string;
-    raza: string;
-    color: string;
-    ubicacionPrevia: string;
-    causa: string;
-    isFeral: boolean;
-    hasPhoto: boolean;
-    observaciones: string;
-  }
-
+  // C. Consolidar felinos fallecidos
   const allDeceased: DeceasedItem[] = [];
   const deceasedChips = new Set<string>();
 
@@ -935,14 +944,6 @@ export async function exportUserScansAndDeceasedExcel(
     }
   }
 
-  // 4. Filtrado por Usuario y por Fecha
-  const matchUser = (uName: string) => {
-    if (userFilter === "all" || !userFilter.trim()) return true;
-    const targetNorm = normalizeStaffName(userFilter).toLowerCase();
-    const currentNorm = normalizeStaffName(uName).toLowerCase();
-    return currentNorm.includes(targetNorm) || targetNorm.includes(currentNorm);
-  };
-
   const matchDate = (dateOrTs: string) => {
     if (dateFilter === "all") return true;
     const d = dateOrTs.includes("T") ? dateOrTs.split("T")[0] : dateOrTs;
@@ -952,12 +953,150 @@ export async function exportUserScansAndDeceasedExcel(
     return true;
   };
 
-  const filteredScans = allScans
-    .filter((s) => matchUser(s.userName) && matchDate(s.date))
+  const filteredScansByDate = allScans.filter((s) => matchDate(s.date));
+  const filteredDeceasedByDate = allDeceased.filter((d) => matchDate(d.fecha));
+
+  return {
+    allScans,
+    allDeceased,
+    filteredScansByDate,
+    filteredDeceasedByDate,
+    todayStr,
+    yesterdayStr,
+    sevenDaysAgo,
+    staffList,
+  };
+}
+
+/**
+ * Obtiene estadísticas exactas de actividad por usuario para la previsualización del Modal
+ */
+export async function getUserActivityStats(
+  dateFilter: "all" | "today" | "yesterday" | "week" = "all",
+  userFilter: string = "all"
+): Promise<{
+  userList: UserActivityStatsItem[];
+  previewStats: { scans: number; deceased: number; photos: number };
+}> {
+  const data = await getConsolidatedActivityData(dateFilter);
+  const userMap = new Map<string, UserActivityStatsItem>();
+
+  // Incorporar staff registrado
+  for (const s of data.staffList) {
+    const norm = normalizeStaffName(s.name);
+    userMap.set(norm, {
+      id: norm,
+      name: norm,
+      role: s.role === "veterinario" ? "MÉDICO VETERINARIO" : s.role.toUpperCase(),
+      count: 0,
+      scans: 0,
+      deceased: 0,
+      photos: 0,
+      firstScan: "",
+      lastScan: "",
+    });
+  }
+
+  // Acumular escaneos filtrados por fecha
+  for (const s of data.filteredScansByDate) {
+    let item = userMap.get(s.userName);
+    if (!item) {
+      item = {
+        id: s.userName,
+        name: s.userName,
+        role: s.userRole,
+        count: 0,
+        scans: 0,
+        deceased: 0,
+        photos: 0,
+        firstScan: s.timestamp,
+        lastScan: s.timestamp,
+      };
+      userMap.set(s.userName, item);
+    }
+    item.scans++;
+    item.count++;
+    if (s.hasPhoto) item.photos++;
+    if (!item.firstScan || s.timestamp < item.firstScan) item.firstScan = s.timestamp;
+    if (!item.lastScan || s.timestamp > item.lastScan) item.lastScan = s.timestamp;
+  }
+
+  // Acumular fallecidos filtrados por fecha
+  for (const d of data.filteredDeceasedByDate) {
+    let item = userMap.get(d.userName);
+    if (!item) {
+      item = {
+        id: d.userName,
+        name: d.userName,
+        role: "MÉDICO VETERINARIO",
+        count: 0,
+        scans: 0,
+        deceased: 0,
+        photos: 0,
+        firstScan: d.fecha,
+        lastScan: d.fecha,
+      };
+      userMap.set(d.userName, item);
+    }
+    item.deceased++;
+    item.count++;
+    if (d.hasPhoto) item.photos++;
+  }
+
+  const userList = Array.from(userMap.values())
+    .sort((a, b) => b.count - a.count);
+
+  let previewStats = { scans: 0, deceased: 0, photos: 0 };
+  if (userFilter === "all" || !userFilter.trim()) {
+    const totalPhotos = data.filteredScansByDate.filter((s) => s.hasPhoto).length +
+      data.filteredDeceasedByDate.filter((d) => d.hasPhoto).length;
+    previewStats = {
+      scans: data.filteredScansByDate.length,
+      deceased: data.filteredDeceasedByDate.length,
+      photos: totalPhotos,
+    };
+  } else {
+    const targetNorm = normalizeStaffName(userFilter).toLowerCase();
+    const matchedUser = userList.find((u) => {
+      const uNorm = u.name.toLowerCase();
+      return uNorm.includes(targetNorm) || targetNorm.includes(uNorm);
+    });
+    if (matchedUser) {
+      previewStats = {
+        scans: matchedUser.scans,
+        deceased: matchedUser.deceased,
+        photos: matchedUser.photos,
+      };
+    }
+  }
+
+  return { userList, previewStats };
+}
+
+/**
+ * Exporta en Excel (.xlsx) la información suministrada por cada usuario de los escaneos diarios y felinos fallecidos
+ */
+export async function exportUserScansAndDeceasedExcel(
+  options: UserScanDeceasedExportOptions = {}
+): Promise<{ totalScans: number; totalDeceased: number; fileName: string }> {
+  const { userFilter = "all", dateFilter = "all" } = options;
+
+  const data = await getConsolidatedActivityData(dateFilter);
+  const { filteredScansByDate, filteredDeceasedByDate, todayStr } = data;
+
+  const matchUser = (uName: string) => {
+    if (userFilter === "all" || !userFilter.trim()) return true;
+    const targetNorm = normalizeStaffName(userFilter).toLowerCase();
+    const currentNorm = normalizeStaffName(uName).toLowerCase();
+    return currentNorm.includes(targetNorm) || targetNorm.includes(currentNorm);
+  };
+
+  const filteredScans = filteredScansByDate
+    .filter((s) => matchUser(s.userName))
     .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 
-  const filteredDeceased = allDeceased
-    .filter((d) => matchUser(d.userName) && matchDate(d.fecha))
+  const filteredDeceased = filteredDeceasedByDate
+    .filter((d) => matchUser(d.userName))
     .sort((a, b) => b.fecha.localeCompare(a.fecha));
 
   // 5. Construir Workbook de Excel

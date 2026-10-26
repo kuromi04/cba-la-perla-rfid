@@ -210,6 +210,7 @@ export const PlanillaEditorTab: React.FC<PlanillaEditorTabProps> = ({
     }
     if (!editingCat || !editingCat.id) return;
 
+    const nowIso = new Date().toISOString();
     const cleanChip = editingCat.microchip.trim().toUpperCase();
     const isHembra = editingCat.sexoCode ? editingCat.sexoCode.startsWith("H") : editingCat.sexo === "hembra";
     const isAdulto = editingCat.sexoCode ? editingCat.sexoCode.includes("A") : true;
@@ -221,14 +222,19 @@ export const PlanillaEditorTab: React.FC<PlanillaEditorTabProps> = ({
       grupoEdad: isAdulto ? "adulto" : "cachorro",
       nombre: editingCat.color ? `Gato ${editingCat.color.split(" ")[0]} ${editingCat.ubicacion}` : `Felino ${editingCat.ubicacion}`,
       descripcion: `${editingCat.sexoCode} ${editingCat.color} (${editingCat.raza})`,
+      updatedBy: currentUser?.name || "Personal CBA La Perla",
+      updatedById: currentUser?.id || "anon_user",
+      updatedAt: nowIso,
     };
 
     await db.gateraRecords.update(editingCat.id, updatedCat);
 
     // Cascada y sincronización en db.animals
     const existingCatAnimal = await db.animals.where("microchip").equals(cleanChip).first();
+    let savedAnimal: Animal;
     if (existingCatAnimal && existingCatAnimal.id) {
-      await db.animals.update(existingCatAnimal.id, {
+      savedAnimal = {
+        ...existingCatAnimal,
         name: updatedCat.nombre,
         location: updatedCat.ubicacion,
         breed: updatedCat.raza || "DPC",
@@ -250,9 +256,13 @@ export const PlanillaEditorTab: React.FC<PlanillaEditorTabProps> = ({
         fechaAseo: updatedCat.fechaAseo,
         medicoVeterinario: updatedCat.medicoVeterinario,
         notes: `${updatedCat.pendientes || ""}. HC: ${updatedCat.hc || ""}`,
-      });
+        updatedBy: currentUser?.name || "Personal CBA La Perla",
+        updatedById: currentUser?.id || "anon_user",
+        updatedAt: nowIso,
+      };
+      await db.animals.update(existingCatAnimal.id, savedAnimal);
     } else {
-      await db.animals.add({
+      savedAnimal = {
         microchip: cleanChip,
         shortChip: updatedCat.shortChip || cleanChip.slice(-7),
         name: updatedCat.nombre,
@@ -278,7 +288,23 @@ export const PlanillaEditorTab: React.FC<PlanillaEditorTabProps> = ({
         fechaAseo: updatedCat.fechaAseo,
         medicoVeterinario: updatedCat.medicoVeterinario,
         notes: `${updatedCat.pendientes || ""}. HC: ${updatedCat.hc || ""}`,
-      });
+        createdBy: currentUser?.name || "Personal CBA La Perla",
+        createdById: currentUser?.id || "anon_user",
+        createdAt: nowIso,
+        updatedBy: currentUser?.name || "Personal CBA La Perla",
+        updatedById: currentUser?.id || "anon_user",
+        updatedAt: nowIso,
+      };
+      const newId = await db.animals.add(savedAnimal);
+      savedAnimal.id = newId;
+    }
+
+    // Sincronizar en Supabase inmediatamente para propagar a otros dispositivos
+    if (typeof window !== "undefined" && navigator.onLine) {
+      try {
+        const { syncAnimalToSupabase } = await import("@/lib/supabase");
+        syncAnimalToSupabase(savedAnimal).catch(console.warn);
+      } catch {}
     }
 
     // Sincronizar en Kardex si tiene tratamiento

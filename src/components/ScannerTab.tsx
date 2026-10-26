@@ -422,6 +422,14 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
       });
     }
 
+    const updatedAnimal: Animal = {
+      ...currentAnimal,
+      lastCensusDate: nowIso,
+      updatedBy: currentUser?.name || "Personal CBA La Perla",
+      updatedById: currentUser?.id || "anon_user",
+      updatedAt: nowIso,
+    };
+
     if (currentAnimal.id) {
       await db.animals.update(currentAnimal.id, {
         lastCensusDate: nowIso,
@@ -429,6 +437,16 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
         updatedById: currentUser?.id || "anon_user",
         updatedAt: nowIso,
       });
+    }
+
+    setCurrentAnimal(updatedAnimal);
+
+    // Sincronizar inmediatamente a Supabase para visibilidad en PC y todos los móviles en tiempo real
+    if (typeof window !== "undefined" && navigator.onLine) {
+      try {
+        const { syncAnimalToSupabase } = await import("@/lib/supabase");
+        syncAnimalToSupabase(updatedAnimal).catch(console.warn);
+      } catch {}
     }
 
     recordAudit({

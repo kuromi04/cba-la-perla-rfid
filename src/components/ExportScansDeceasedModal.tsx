@@ -15,10 +15,13 @@ import {
 } from "lucide-react";
 import {
   exportUserScansAndDeceasedExcel,
+  getUserActivityStats,
   normalizeStaffName,
+  UserActivityStatsItem,
 } from "@/lib/excelGenerator";
-import { db } from "@/lib/db";
+import { db, syncAnimalsBidirectional } from "@/lib/db";
 import { getFieldStaff, StaffMember } from "@/lib/staff";
+import { RefreshCw } from "lucide-react";
 
 interface ExportScansDeceasedModalProps {
   isOpen: boolean;
@@ -34,7 +37,8 @@ export const ExportScansDeceasedModal: React.FC<ExportScansDeceasedModalProps> =
   const [selectedUser, setSelectedUser] = useState<string>(defaultUser);
   const [dateFilter, setDateFilter] = useState<"all" | "today" | "yesterday" | "week">("all");
   const [isExporting, setIsExporting] = useState(false);
-  const [availableUsers, setAvailableUsers] = useState<{ id: string; name: string; role: string; count: number }[]>([]);
+  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+  const [availableUsers, setAvailableUsers] = useState<UserActivityStatsItem[]>([]);
   const [previewStats, setPreviewStats] = useState<{ scans: number; deceased: number; photos: number }>({
     scans: 0,
     deceased: 0,
@@ -42,90 +46,36 @@ export const ExportScansDeceasedModal: React.FC<ExportScansDeceasedModalProps> =
   });
   const [feedback, setFeedback] = useState<string | null>(null);
 
-  // Cargar lista dinámica de usuarios y estadísticas de vista previa
+  // Cargar lista dinámica y estadísticas consolidadas exactas (100% coincidentes con el Excel)
+  const loadUsersAndStats = async () => {
+    try {
+      const stats = await getUserActivityStats(dateFilter, selectedUser);
+      setAvailableUsers(stats.userList);
+      setPreviewStats(stats.previewStats);
+    } catch (err) {
+      console.warn("Error cargando estadísticas para exportación:", err);
+    }
+  };
+
   useEffect(() => {
     if (!isOpen) return;
-
-    const loadUsersAndStats = async () => {
-      try {
-        const [animals, census, gatera, staff] = await Promise.all([
-          db.animals.toArray(),
-          db.census.toArray(),
-          db.gateraRecords.toArray(),
-          getFieldStaff().catch(() => [] as StaffMember[]),
-        ]);
-
-        const userCountMap = new Map<string, { role: string; count: number }>();
-
-        // Incorporar staff oficial
-        for (const s of staff) {
-          const norm = normalizeStaffName(s.name);
-          userCountMap.set(norm, { role: s.role, count: 0 });
-        }
-
-        // Cruzar con animales y censos
-        for (const a of animals) {
-          const actor = normalizeStaffName(a.updatedBy || a.medicoVeterinario || a.createdBy);
-          if (actor && actor !== "Sin Asignar") {
-            const current = userCountMap.get(actor) || {
-              role: actor.startsWith("Dr") ? "veterinario" : "operario",
-              count: 0,
-            };
-            current.count++;
-            userCountMap.set(actor, current);
-          }
-        }
-
-        for (const c of census) {
-          const actor = normalizeStaffName(c.scannedBy);
-          if (actor && actor !== "Sin Asignar") {
-            const current = userCountMap.get(actor) || {
-              role: actor.startsWith("Dr") ? "veterinario" : "operario",
-              count: 0,
-            };
-            current.count++;
-            userCountMap.set(actor, current);
-          }
-        }
-
-        const userList = Array.from(userCountMap.entries())
-          .map(([name, data]) => ({
-            id: name,
-            name,
-            role: data.role,
-            count: data.count,
-          }))
-          .sort((a, b) => b.count - a.count);
-
-        setAvailableUsers(userList);
-
-        // Previsualización inicial
-        const nowStr = new Date().toISOString().split("T")[0];
-        let totalScans = 0;
-        let totalDeceased = 0;
-        let totalPhotos = 0;
-
-        for (const a of animals) {
-          if (a.photoUrl) totalPhotos++;
-          if (
-            (a.location || "").toUpperCase().trim() === "FALLECIDO" ||
-            (a.status || "").toLowerCase().trim() === "fallecido"
-          ) {
-            totalDeceased++;
-          } else if (a.lastCensusDate) {
-            totalScans++;
-          }
-        }
-        totalScans = Math.max(totalScans, census.length);
-
-        setPreviewStats({ scans: totalScans, deceased: totalDeceased, photos: totalPhotos });
-      } catch (err) {
-        console.warn("Error cargando usuarios para exportación:", err);
-      }
-    };
-
     loadUsersAndStats();
-  }, [isOpen]);
+  }, [isOpen, dateFilter, selectedUser]);
+
+  const handleSyncCloud = async () => {
+    setIsSyncingCloud(true);
+    setFeedback("🔄 Descargando y sincronizando novedades desde Supabase en la nube...");
+    try {
+      await syncAnimalsBidirectional();
+      await loadUsersAndStats();
+      setFeedback("✅ Sincronización completa: todos los escaneos móviles están al día.");
+    } catch {
+      setFeedback("⚠️ Conexión no disponible. Mostrando datos locales de este dispositivo.");
+    } finally {
+      setIsSyncingCloud(false);
+      setTimeout(() => setFeedback(null), 4000);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -193,6 +143,22 @@ export const ExportScansDeceasedModal: React.FC<ExportScansDeceasedModalProps> =
               <span>{feedback}</span>
             </div>
           )}
+          {/* Botón de Sincronización en la Nube */}
+          <div className="flex items-center justify-between p-2.5 bg-emerald-50/70 border border-emerald-200 rounded-2xl">
+            <span className="text-[11px] font-bold text-emerald-950 flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              Sincronización con móviles y PC
+            </span>
+            <button
+              type="button"
+              disabled={isSyncingCloud}
+              onClick={handleSyncCloud}
+              className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold text-[11px] flex items-center gap-1.5 shadow-xs transition-all active:scale-95 disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncingCloud ? "animate-spin" : ""}`} />
+              <span>{isSyncingCloud ? "Sincronizando..." : "Actualizar desde Nube"}</span>
+            </button>
+          </div>
 
           {/* Tarjeta de Métricas Rápidas */}
           <div className="grid grid-cols-3 gap-2 bg-slate-50 border border-slate-200 p-3 rounded-2xl text-center">

@@ -935,6 +935,33 @@ export function setupRealtimeDatabaseSync(
                 });
               }
 
+              // Actualizar o insertar en censo local si tiene fecha de censo
+              if (animalData.lastCensusDate && !isFallecido) {
+                const ec = await db.census.where("microchip").equals(chip).first();
+                if (!ec) {
+                  await db.census.add({
+                    microchip: chip,
+                    shortChip: animalData.shortChip || chip.slice(-7),
+                    animalName: animalData.name || "Felino",
+                    species: "gato",
+                    location: animalData.location || "GATERA",
+                    scannedAt: animalData.lastCensusDate,
+                    scannedBy: animalData.updatedBy || animalData.createdBy || animalData.medicoVeterinario || "Personal CBA",
+                    treatmentCount: 0,
+                    area: "gatera",
+                    photoUrl: animalData.photoUrl,
+                  }).catch(() => {});
+                } else if (ec.id) {
+                  await db.census.update(ec.id, {
+                    animalName: animalData.name,
+                    location: animalData.location,
+                    scannedAt: animalData.lastCensusDate,
+                    scannedBy: animalData.updatedBy || ec.scannedBy,
+                    photoUrl: animalData.photoUrl || ec.photoUrl,
+                  }).catch(() => {});
+                }
+              }
+
               if (typeof window !== "undefined") {
                 window.dispatchEvent(new CustomEvent("cba_sync_update", { detail: { entity: "animal", data: animalData } }));
               }

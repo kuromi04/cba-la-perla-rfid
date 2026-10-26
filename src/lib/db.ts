@@ -570,30 +570,37 @@ export async function syncAnimalsBidirectional(): Promise<{ pulled: number; push
           ) {
             // Garantizar que la foto nunca se pierda
             const resolvedPhoto = remote.photoUrl || existing.photoUrl || existingGatera?.photoUrl;
+            const localTs = new Date(existing.updatedAt || existing.lastCensusDate || 0).getTime();
+            const remoteTs = new Date(remote.updatedAt || remote.lastCensusDate || 0).getTime();
+            const localIsNewer = localTs > remoteTs;
+
+            const resolvedCensusDate = (remote.lastCensusDate && existing.lastCensusDate)
+              ? (remote.lastCensusDate > existing.lastCensusDate ? remote.lastCensusDate : existing.lastCensusDate)
+              : (remote.lastCensusDate || existing.lastCensusDate);
 
             animalsToSave.push({
               ...existing,
               ...remote,
               id: existing.id,
-              name: remote.name || existing.name,
-              location: remote.location || existing.location,
-              status: remote.status || existing.status,
-              color: remote.color || existing.color,
+              name: localIsNewer ? existing.name : (remote.name || existing.name),
+              location: localIsNewer ? existing.location : (remote.location || existing.location),
+              status: localIsNewer ? existing.status : (remote.status || existing.status),
+              color: localIsNewer ? existing.color : (remote.color || existing.color),
               photoUrl: resolvedPhoto,
-              notes: remote.notes || existing.notes,
-              observacionesMedicas: remote.observacionesMedicas || existing.observacionesMedicas,
-              retroviralStatus: remote.retroviralStatus || existing.retroviralStatus,
-              vifStatus: remote.vifStatus || existing.vifStatus,
-              felvStatus: remote.felvStatus || existing.felvStatus,
-              condicionCorporal: remote.condicionCorporal || existing.condicionCorporal,
-              estadoSalud: remote.estadoSalud || existing.estadoSalud,
-              medicoVeterinario: remote.medicoVeterinario || existing.medicoVeterinario,
+              notes: localIsNewer ? existing.notes : (remote.notes || existing.notes),
+              observacionesMedicas: localIsNewer ? existing.observacionesMedicas : (remote.observacionesMedicas || existing.observacionesMedicas),
+              retroviralStatus: localIsNewer ? existing.retroviralStatus : (remote.retroviralStatus || existing.retroviralStatus),
+              vifStatus: localIsNewer ? existing.vifStatus : (remote.vifStatus || existing.vifStatus),
+              felvStatus: localIsNewer ? existing.felvStatus : (remote.felvStatus || existing.felvStatus),
+              condicionCorporal: localIsNewer ? existing.condicionCorporal : (remote.condicionCorporal || existing.condicionCorporal),
+              estadoSalud: localIsNewer ? existing.estadoSalud : (remote.estadoSalud || existing.estadoSalud),
+              medicoVeterinario: localIsNewer ? existing.medicoVeterinario : (remote.medicoVeterinario || existing.medicoVeterinario),
               fechaFallecimiento: remote.fechaFallecimiento || existing.fechaFallecimiento,
               causaFallecimiento: remote.causaFallecimiento || existing.causaFallecimiento,
               ubicacionPrevia: remote.ubicacionPrevia || existing.ubicacionPrevia,
-              lastCensusDate: remote.lastCensusDate || existing.lastCensusDate,
-              updatedAt: remote.updatedAt || new Date().toISOString(),
-              updatedBy: remote.updatedBy || existing.updatedBy,
+              lastCensusDate: resolvedCensusDate,
+              updatedAt: localIsNewer ? existing.updatedAt : (remote.updatedAt || new Date().toISOString()),
+              updatedBy: localIsNewer ? (existing.updatedBy || remote.updatedBy) : (remote.updatedBy || existing.updatedBy),
               createdBy: existing.createdBy || remote.createdBy,
               createdById: existing.createdById || remote.createdById,
             });
@@ -667,9 +674,40 @@ export async function syncAnimalsBidirectional(): Promise<{ pulled: number; push
       await db.gateraRecords.bulkPut(gateraToSave);
     }
 
-    // 2. Subida en lotes rápidos (batches de 50) de animales locales que falten en Supabase
-    const remoteChips = new Set(remoteAnimals.map((r) => r.microchip.trim().toUpperCase()));
-    const toPush = localAnimals.filter((local) => !remoteChips.has(local.microchip.trim().toUpperCase()));
+    // 2. Subida en lotes rápidos (batches de 50) de animales locales que falten o tengan novedades en Supabase
+    const remoteMap = new Map<string, Animal>();
+    for (const r of remoteAnimals) {
+      if (r.microchip) remoteMap.set(r.microchip.trim().toUpperCase(), r);
+      if (r.shortChip) remoteMap.set(r.shortChip.trim().toUpperCase(), r);
+    }
+
+    const toPush: Animal[] = [];
+    for (const local of localAnimals) {
+      const chip = (local.microchip || "").trim().toUpperCase();
+      if (!chip) continue;
+      const remote = remoteMap.get(chip) || (local.shortChip ? remoteMap.get(local.shortChip.trim().toUpperCase()) : undefined);
+
+      if (!remote) {
+        // Animal nuevo que no existe en Supabase
+        toPush.push(local);
+      } else {
+        const localTs = new Date(local.updatedAt || local.lastCensusDate || 0).getTime();
+        const remoteTs = new Date(remote.updatedAt || remote.lastCensusDate || 0).getTime();
+
+        const localCensus = local.lastCensusDate;
+        const remoteCensus = remote.lastCensusDate;
+        const censusNewer = Boolean(localCensus && (!remoteCensus || localCensus > remoteCensus));
+
+        const updateNewer = localTs > remoteTs;
+        const localHasPhotoAndRemoteNot = Boolean(local.photoUrl && !remote.photoUrl);
+        const locChanged = Boolean(local.location && local.location !== remote.location && localTs >= remoteTs);
+        const statusChanged = Boolean(local.status && local.status !== remote.status && localTs >= remoteTs);
+
+        if (censusNewer || updateNewer || localHasPhotoAndRemoteNot || locChanged || statusChanged) {
+          toPush.push(local);
+        }
+      }
+    }
 
     if (toPush.length > 0) {
       const chunkSize = 50;
