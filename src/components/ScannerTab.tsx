@@ -30,6 +30,7 @@ import {
   ZoomIn,
   Image as ImageIcon,
   Loader2,
+  RefreshCw,
 } from "lucide-react";
 import { compressImageFile } from "@/lib/imageUtils";
 import { VoiceModal } from "./VoiceModal";
@@ -110,8 +111,12 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
     onScan: (code) => {
       setChipInput(code);
       handleSearch(code);
+      if (inputRef.current) {
+        inputRef.current.value = code;
+        inputRef.current.select();
+      }
     },
-    minLength: 6, // Admite chips cortos como 3805740 o completos de 15 dígitos
+    minLength: 6,
   });
 
   const handleSearch = async (query: string) => {
@@ -307,9 +312,54 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
     }
   };
 
+  const handleResetToNextScan = () => {
+    setChipInput("");
+    setCurrentAnimal(null);
+    setNotFound(false);
+    setCensusConfirmed(false);
+    setFeedbackMessage("Lector W91A listo: escanee el siguiente microchip.");
+    setIsEditing(false);
+    setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.value = "";
+        inputRef.current.focus();
+        inputRef.current.select();
+      }
+    }, 50);
+  };
+
+  const handleChipInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let val = e.target.value.trim().toUpperCase();
+
+    // Detección inteligente de sobre-escaneo: si el usuario escanea un chip nuevo sin borrar el anterior,
+    // el valor resultante supera 15 dígitos numéricos (ej: 991003003805302991003003806121).
+    // Tomar automáticamente los últimos 15 dígitos del nuevo chip.
+    if (val.length > 15 && /^\d+$/.test(val)) {
+      val = val.slice(-15);
+      if (inputRef.current) {
+        inputRef.current.value = val;
+      }
+    }
+
+    setChipInput(val);
+
+    // Auto-búsqueda instantánea si se detecta un microchip ISO de 15 dígitos
+    if (val.length === 15 && /^\d{15}$/.test(val)) {
+      handleSearch(val);
+      if (inputRef.current) {
+        inputRef.current.select();
+      }
+    }
+  };
+
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    handleSearch(chipInput);
+    let query = chipInput.trim().toUpperCase();
+    if (query.length > 15 && /^\d+$/.test(query)) {
+      query = query.slice(-15);
+      setChipInput(query);
+    }
+    handleSearch(query);
   };
 
   const handleConfirmCensus = async () => {
@@ -1225,14 +1275,26 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
             data-chip-scanner="true"
             type="text"
             value={chipInput}
-            onChange={(e) => setChipInput(e.target.value)}
+            onChange={handleChipInputChange}
+            onFocus={(e) => e.target.select()}
+            onClick={(e) => (e.target as HTMLInputElement).select()}
             placeholder="Acerque el W91A al chip del animal..."
             autoFocus
             autoComplete="off"
-            className="w-full text-xl sm:text-2xl font-mono tracking-wider text-center py-4 px-12 border-2 border-indigo-500 rounded-2xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-100 transition-all font-bold"
+            className="w-full text-xl sm:text-2xl font-mono tracking-wider text-center py-4 pl-12 pr-28 sm:pr-36 border-2 border-indigo-500 rounded-2xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-100 transition-all font-bold"
           />
           <Scan className="absolute left-4 top-1/2 -translate-y-1/2 text-indigo-600 w-6 h-6" />
           <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+            {chipInput && (
+              <button
+                type="button"
+                onClick={handleResetToNextScan}
+                className="p-1.5 bg-slate-200 hover:bg-rose-100 text-slate-600 hover:text-rose-700 rounded-xl transition-all active:scale-90"
+                title="Borrar microchip y dejar listo para el siguiente felino"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setIsVoiceOpen(true)}
@@ -1289,6 +1351,23 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
       {/* 2. Tarjeta del Animal Encontrado con Datos del Excel */}
       {currentAnimal && (
         <div className="bg-white rounded-3xl p-6 shadow-xl border border-slate-200 space-y-4 animate-in slide-in-from-bottom-4 duration-200">
+          {/* Barra de acción rápida: Siguiente Felino */}
+          <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-purple-50 border border-purple-200 rounded-2xl">
+            <span className="text-xs font-black text-purple-900 flex items-center gap-2">
+              <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-ping" />
+              Ficha activa: {currentAnimal.name} ({currentAnimal.shortChip || currentAnimal.microchip.slice(-7)})
+            </span>
+            <button
+              type="button"
+              onClick={handleResetToNextScan}
+              className="px-3.5 py-1.5 bg-purple-700 hover:bg-purple-800 active:scale-95 text-white font-black text-xs rounded-xl flex items-center gap-1.5 shadow-sm transition-all ml-auto"
+              title="Limpiar y preparar el lector para el siguiente felino"
+            >
+              <RefreshCw className="w-3.5 h-3.5 text-purple-200" />
+              <span>Escanear Siguiente Felino</span>
+            </button>
+          </div>
+
           {/* ALERTAS DE BIOSEGURIDAD CRÍTICA */}
           {(() => {
             const isCDV =
@@ -2199,6 +2278,17 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
                 <span>DICTAR POR VOZ (IA)</span>
               </button>
             </div>
+
+            {censusConfirmed && (
+              <button
+                type="button"
+                onClick={handleResetToNextScan}
+                className="btn-touch w-full py-4 px-4 rounded-2xl font-black text-sm bg-gradient-to-r from-emerald-600 via-teal-700 to-emerald-800 hover:from-emerald-700 hover:to-teal-800 text-white flex items-center justify-center gap-2.5 shadow-xl shadow-emerald-600/30 active:scale-95 transition-all animate-pulse"
+              >
+                <Scan className="w-5 h-5 text-emerald-200" />
+                <span>LISTO PARA SIGUIENTE FELINO (W91A PREPARADO) ➔</span>
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -2388,6 +2478,25 @@ export const ScannerTab: React.FC<ScannerTabProps> = ({ initialChip = "", onGoTo
           handleDeletePhoto();
         }}
       />
+
+      {/* Barra Flotante Inferior para Escaneo Rápido de Siguiente Felino */}
+      {currentAnimal && (
+        <div className="fixed bottom-20 sm:bottom-6 left-1/2 -translate-x-1/2 z-30 w-11/12 max-w-md bg-slate-900/95 backdrop-blur-md text-white p-2.5 rounded-2xl shadow-2xl border border-slate-700 flex items-center justify-between gap-3 animate-in slide-in-from-bottom-3">
+          <div className="min-w-0 pl-1">
+            <span className="text-[10px] text-slate-400 block font-semibold">Listo para otro chip</span>
+            <span className="text-xs font-black truncate block text-slate-100">{currentAnimal.name}</span>
+          </div>
+          <button
+            type="button"
+            onClick={handleResetToNextScan}
+            className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 active:scale-95 text-white font-black text-xs rounded-xl flex items-center gap-1.5 shadow-md transition-all shrink-0"
+            title="Preparar el buscador para el siguiente chip"
+          >
+            <RefreshCw className="w-3.5 h-3.5 text-purple-200" />
+            <span>Escanear Siguiente</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 };
