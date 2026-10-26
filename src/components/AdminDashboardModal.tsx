@@ -24,6 +24,7 @@ import { computeEdaAnalysis, exportEdaExcelReport, EdaSummary } from "@/lib/edaA
 import { OFFICIAL_GATERA_LOCATIONS, getAllGateraLocations } from "@/lib/gateraLocations";
 import { OFFICIAL_GATERA_COLORS } from "@/lib/gateraColors";
 import { GateraCat } from "@/lib/gateraData";
+import { ExportScansDeceasedModal } from "./ExportScansDeceasedModal";
 import {
   ShieldAlert,
   Users,
@@ -115,6 +116,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [isNewKardexOpen, setIsNewKardexOpen] = useState(false);
   const [isNewStaffOpen, setIsNewStaffOpen] = useState(false);
   const [isNewShiftOpen, setIsNewShiftOpen] = useState(false);
+  const [isExportScansModalOpen, setIsExportScansModalOpen] = useState(false);
 
   // Formularios de Creación
   const [newStaffForm, setNewStaffForm] = useState({
@@ -2139,6 +2141,17 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                         ))}
                       </select>
 
+                      {/* Botón Exportar Escaneos Diarios y Fallecidos por Usuario */}
+                      <button
+                        type="button"
+                        onClick={() => setIsExportScansModalOpen(true)}
+                        className="px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 active:scale-95 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-all"
+                        title="Exportar reporte detallado de escaneos diarios y fallecidos por usuario a Excel"
+                      >
+                        <FileSpreadsheet className="w-4 h-4 text-emerald-200" />
+                        <span>📥 Escaneos y Fallecidos (.xlsx)</span>
+                      </button>
+
                       {/* Botón Exportar Reporte Excel Oficial */}
                       <button
                         type="button"
@@ -2147,7 +2160,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                         title="Exportar reporte detallado de actividad de funcionarios a Excel"
                       >
                         <FileSpreadsheet className="w-4 h-4 text-purple-200" />
-                        <span>📥 Descargar Excel</span>
+                        <span>Resumen Actividad</span>
                       </button>
 
                       {/* Botón Refrescar Auditoría */}
@@ -2978,6 +2991,13 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
             </div>
           </div>
         )}
+
+        {/* Modal Exportar Escaneos Diarios y Fallecidos por Usuario */}
+        <ExportScansDeceasedModal
+          isOpen={isExportScansModalOpen}
+          onClose={() => setIsExportScansModalOpen(false)}
+          defaultUser={selectedStatUser}
+        />
 
       </div>
     </div>

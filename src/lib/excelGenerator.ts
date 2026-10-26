@@ -704,3 +704,454 @@ export async function exportFallecidosExcel() {
   XLSX.writeFile(workbook, `CONTROL_FALLECIDOS_GATERA_${today}.xlsx`);
 }
 
+export interface UserScanDeceasedExportOptions {
+  userFilter?: string; // "all" o nombre específico
+  dateFilter?: "all" | "today" | "yesterday" | "week";
+}
+
+/**
+ * Normaliza nombres de usuario para agrupar variaciones tipográficas
+ */
+export function normalizeStaffName(rawName?: string | null): string {
+  if (!rawName) return "Sin Asignar";
+  const clean = rawName.trim();
+  const upper = clean.toUpperCase();
+
+  if (upper.includes("NATALIA") && upper.includes("CORTES")) return "Dra. Natalia Cortés Restrepo";
+  if (upper.includes("JENNY") && upper.includes("ZAPATA")) return "Dra. Jenny Zapata Calle";
+  if (upper.includes("YANETH") && upper.includes("CALD")) return "Yaneth Esperanza Caldón Manquillo";
+  if (upper.includes("GHINA") || upper.includes("COMBARIZA") || upper.includes("COMBRIZA")) return "Ghina Marcela Combariza";
+  if (upper.includes("DANIELA") && upper.includes("MONSALVE")) return "Daniela Monsalve Arcila";
+  if (upper.includes("ADMINISTRADOR")) return "Dr. Administrador Maestro";
+  if (clean === "Personal CBA La Perla" || clean === "anon_user") return "Personal de Turno CBA";
+
+  return clean;
+}
+
+/**
+ * Exporta en Excel (.xlsx) la información suministrada por cada usuario de los escaneos diarios y felinos fallecidos
+ */
+export async function exportUserScansAndDeceasedExcel(
+  options: UserScanDeceasedExportOptions = {}
+): Promise<{ totalScans: number; totalDeceased: number; fileName: string }> {
+  const { userFilter = "all", dateFilter = "all" } = options;
+
+  const now = new Date();
+  const todayStr = now.toISOString().split("T")[0];
+  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const yesterdayStr = yesterday.toISOString().split("T")[0];
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+
+  // 1. Obtener datos de IndexedDB
+  const [censusList, animalsList, gateraList, auditLogs] = await Promise.all([
+    db.census.toArray(),
+    db.animals.toArray(),
+    db.gateraRecords.toArray(),
+    db.auditLogs.toArray(),
+  ]);
+
+  // Mapa auxiliar para completar datos clínicos por chip
+  const animalMap = new Map<string, any>();
+  for (const a of animalsList) {
+    const chip = (a.microchip || "").trim().toUpperCase();
+    if (chip) animalMap.set(chip, a);
+    if (a.shortChip) animalMap.set(a.shortChip.trim().toUpperCase(), a);
+  }
+  for (const g of gateraList) {
+    const chip = (g.microchip || "").trim().toUpperCase();
+    if (chip && !animalMap.has(chip)) animalMap.set(chip, g);
+  }
+
+  // 2. Consolidar todos los escaneos diarios con su usuario responsable
+  interface ScanItem {
+    timestamp: string;
+    date: string;
+    userName: string;
+    userRole: string;
+    microchip: string;
+    shortChip: string;
+    hc: string;
+    name: string;
+    location: string;
+    status: string;
+    condicionCorporal: string;
+    estadoSalud: string;
+    retroviralStatus: string;
+    isFeral: boolean;
+    medicacion: string;
+    hasPhoto: boolean;
+    observaciones: string;
+  }
+
+  const allScans: ScanItem[] = [];
+  const registeredScansKey = new Set<string>();
+
+  // A. Desde la tabla censo
+  for (const c of censusList) {
+    const rawChip = (c.microchip || "").trim().toUpperCase();
+    const ts = c.scannedAt || todayStr;
+    const date = ts.split("T")[0];
+    const key = `${rawChip}_${date}`;
+    if (!registeredScansKey.has(key)) {
+      const match = animalMap.get(rawChip);
+      const uName = normalizeStaffName(c.scannedBy || match?.medicoVeterinario || match?.updatedBy || match?.createdBy);
+      allScans.push({
+        timestamp: ts,
+        date,
+        userName: uName,
+        userRole: uName.startsWith("Dr") ? "MÉDICO VETERINARIO" : "OPERARIO / AUXILIAR",
+        microchip: c.microchip || rawChip,
+        shortChip: c.shortChip || (rawChip.length > 7 ? rawChip.slice(-7) : rawChip),
+        hc: c.hc || match?.hc || "N/A",
+        name: c.animalName || match?.name || match?.nombre || "Felino",
+        location: c.location || match?.location || match?.ubicacion || "GATERA",
+        status: match?.status || "activo",
+        condicionCorporal: c.condicionCorporal || match?.condicionCorporal || "Normal",
+        estadoSalud: c.estadoSalud || match?.estadoSalud || "Estable",
+        retroviralStatus: c.retroviralStatus || match?.retroviralStatus || "NEGATIVO",
+        isFeral: Boolean(c.isFeral || match?.isFeral),
+        medicacion: c.medicacion || match?.medicacion || match?.notes || "Ninguno",
+        hasPhoto: Boolean(c.photoUrl || match?.photoUrl),
+        observaciones: c.observacionesMedicas || match?.observacionesMedicas || match?.notes || "Sin observaciones",
+      });
+      registeredScansKey.add(key);
+    }
+  }
+
+  // B. Desde animales actualizados o con lastCensusDate
+  for (const a of animalsList) {
+    const rawChip = (a.microchip || "").trim().toUpperCase();
+    const ts = a.lastCensusDate || a.updatedAt;
+    if (ts) {
+      const date = ts.split("T")[0];
+      const key = `${rawChip}_${date}`;
+      if (!registeredScansKey.has(key)) {
+        const uName = normalizeStaffName(a.updatedBy || a.medicoVeterinario || a.createdBy);
+        allScans.push({
+          timestamp: ts,
+          date,
+          userName: uName,
+          userRole: uName.startsWith("Dr") ? "MÉDICO VETERINARIO" : "OPERARIO / AUXILIAR",
+          microchip: a.microchip || rawChip,
+          shortChip: a.shortChip || (rawChip.length > 7 ? rawChip.slice(-7) : rawChip),
+          hc: a.hc || "N/A",
+          name: a.name || "Felino",
+          location: a.location || "GATERA",
+          status: a.status || "activo",
+          condicionCorporal: a.condicionCorporal || "Normal",
+          estadoSalud: a.estadoSalud || "Estable",
+          retroviralStatus: a.retroviralStatus || "NEGATIVO",
+          isFeral: Boolean(a.isFeral),
+          medicacion: a.notes || a.observacionesMedicas || "Ninguno",
+          hasPhoto: Boolean(a.photoUrl),
+          observaciones: a.observacionesMedicas || a.notes || "Sin observaciones",
+        });
+        registeredScansKey.add(key);
+      }
+    }
+  }
+
+  // 3. Consolidar felinos fallecidos con su usuario responsable
+  interface DeceasedItem {
+    fecha: string;
+    userName: string;
+    microchip: string;
+    shortChip: string;
+    hc: string;
+    name: string;
+    sexo: string;
+    raza: string;
+    color: string;
+    ubicacionPrevia: string;
+    causa: string;
+    isFeral: boolean;
+    hasPhoto: boolean;
+    observaciones: string;
+  }
+
+  const allDeceased: DeceasedItem[] = [];
+  const deceasedChips = new Set<string>();
+
+  for (const a of animalsList) {
+    const isFallecido =
+      (a.location || "").toUpperCase().trim() === "FALLECIDO" ||
+      (a.status || "").toLowerCase().trim() === "fallecido" ||
+      Boolean(a.fechaFallecimiento);
+
+    if (isFallecido) {
+      const chip = (a.microchip || "").trim().toUpperCase();
+      if (!deceasedChips.has(chip)) {
+        const gRec = gateraList.find((g) => (g.microchip || "").trim().toUpperCase() === chip);
+        const uName = normalizeStaffName(a.updatedBy || a.medicoVeterinario || gRec?.medicoVeterinario || a.createdBy);
+        allDeceased.push({
+          fecha: a.fechaFallecimiento || gRec?.fechaFallecimiento || a.updatedAt?.split("T")[0] || todayStr,
+          userName: uName,
+          microchip: a.microchip,
+          shortChip: a.shortChip || (chip.length > 7 ? chip.slice(-7) : chip),
+          hc: a.hc || gRec?.hc || "N/A",
+          name: a.name || gRec?.nombre || "Felino",
+          sexo: a.gender || gRec?.sexo || "macho",
+          raza: a.breed || gRec?.raza || "DPC",
+          color: a.color || gRec?.color || "N/A",
+          ubicacionPrevia: a.ubicacionPrevia || gRec?.ubicacionPrevia || "GATERA",
+          causa: a.causaFallecimiento || gRec?.causaFallecimiento || a.notes || "Causa en estudio",
+          isFeral: Boolean(a.isFeral || gRec?.isFeral),
+          hasPhoto: Boolean(a.photoUrl || gRec?.photoUrl),
+          observaciones: a.observacionesMedicas || a.notes || gRec?.observacionesMedicas || "Registro de defunción",
+        });
+        deceasedChips.add(chip);
+      }
+    }
+  }
+
+  for (const g of gateraList) {
+    const isFallecido =
+      (g.ubicacion || "").toUpperCase().trim() === "FALLECIDO" ||
+      (g.status || "").toLowerCase().trim() === "fallecido" ||
+      Boolean(g.fechaFallecimiento);
+
+    if (isFallecido) {
+      const chip = (g.microchip || "").trim().toUpperCase();
+      if (!deceasedChips.has(chip)) {
+        const uName = normalizeStaffName(g.medicoVeterinario || g.updatedBy || g.createdBy);
+        allDeceased.push({
+          fecha: g.fechaFallecimiento || todayStr,
+          userName: uName,
+          microchip: g.microchip,
+          shortChip: g.shortChip || (chip.length > 7 ? chip.slice(-7) : chip),
+          hc: g.hc || "N/A",
+          name: g.nombre || "Felino",
+          sexo: g.sexo || "macho",
+          raza: g.raza || "DPC",
+          color: g.color || "N/A",
+          ubicacionPrevia: g.ubicacionPrevia || "GATERA",
+          causa: g.causaFallecimiento || g.observacionesMedicas || "Causa en estudio",
+          isFeral: Boolean(g.isFeral),
+          hasPhoto: Boolean(g.photoUrl),
+          observaciones: g.observacionesMedicas || g.pendientes || "Registro de defunción",
+        });
+        deceasedChips.add(chip);
+      }
+    }
+  }
+
+  // 4. Filtrado por Usuario y por Fecha
+  const matchUser = (uName: string) => {
+    if (userFilter === "all" || !userFilter.trim()) return true;
+    const targetNorm = normalizeStaffName(userFilter).toLowerCase();
+    const currentNorm = normalizeStaffName(uName).toLowerCase();
+    return currentNorm.includes(targetNorm) || targetNorm.includes(currentNorm);
+  };
+
+  const matchDate = (dateOrTs: string) => {
+    if (dateFilter === "all") return true;
+    const d = dateOrTs.includes("T") ? dateOrTs.split("T")[0] : dateOrTs;
+    if (dateFilter === "today") return d === todayStr;
+    if (dateFilter === "yesterday") return d === yesterdayStr;
+    if (dateFilter === "week") return d >= sevenDaysAgo;
+    return true;
+  };
+
+  const filteredScans = allScans
+    .filter((s) => matchUser(s.userName) && matchDate(s.date))
+    .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+
+  const filteredDeceased = allDeceased
+    .filter((d) => matchUser(d.userName) && matchDate(d.fecha))
+    .sort((a, b) => b.fecha.localeCompare(a.fecha));
+
+  // 5. Construir Workbook de Excel
+  const wb = XLSX.utils.book_new();
+
+  // HOJA 1: RESUMEN DE ACTIVIDAD POR USUARIO
+  const userAggMap = new Map<string, {
+    userName: string;
+    role: string;
+    totalScans: number;
+    activeCats: number;
+    deceasedCount: number;
+    withPhotos: number;
+    firstScan: string;
+    lastScan: string;
+  }>();
+
+  for (const s of filteredScans) {
+    let agg = userAggMap.get(s.userName);
+    if (!agg) {
+      agg = {
+        userName: s.userName,
+        role: s.userRole,
+        totalScans: 0,
+        activeCats: 0,
+        deceasedCount: 0,
+        withPhotos: 0,
+        firstScan: s.timestamp,
+        lastScan: s.timestamp,
+      };
+      userAggMap.set(s.userName, agg);
+    }
+    agg.totalScans++;
+    if (s.status !== "fallecido") agg.activeCats++;
+    if (s.hasPhoto) agg.withPhotos++;
+    if (s.timestamp < agg.firstScan) agg.firstScan = s.timestamp;
+    if (s.timestamp > agg.lastScan) agg.lastScan = s.timestamp;
+  }
+
+  for (const d of filteredDeceased) {
+    let agg = userAggMap.get(d.userName);
+    if (!agg) {
+      agg = {
+        userName: d.userName,
+        role: "MÉDICO VETERINARIO",
+        totalScans: 0,
+        activeCats: 0,
+        deceasedCount: 0,
+        withPhotos: 0,
+        firstScan: d.fecha,
+        lastScan: d.fecha,
+      };
+      userAggMap.set(d.userName, agg);
+    }
+    agg.deceasedCount++;
+  }
+
+  const resumenRows = Array.from(userAggMap.values())
+    .sort((a, b) => (b.totalScans + b.deceasedCount) - (a.totalScans + a.deceasedCount))
+    .map((u, idx) => ({
+      "N°": idx + 1,
+      "FUNCIONARIO / PROFESIONAL": u.userName,
+      "CARGO / ROL": u.role,
+      "TOTAL ESCANEOS / CENSOS": u.totalScans,
+      "FELINOS ACTIVOS VERIFICADOS": u.activeCats,
+      "FELINOS FALLECIDOS REGISTRADOS": u.deceasedCount,
+      "FOTOGRAFÍAS ADJUNTADAS": u.withPhotos,
+      "PRIMER ESCANEO REGISTRADO": u.firstScan ? new Date(u.firstScan).toLocaleString() : "N/A",
+      "ÚLTIMO ESCANEO REGISTRADO": u.lastScan ? new Date(u.lastScan).toLocaleString() : "N/A",
+    }));
+
+  const wsResumen = XLSX.utils.json_to_sheet(
+    resumenRows.length > 0
+      ? resumenRows
+      : [{ "ESTADO": "No se encontraron escaneos ni fallecidos con los filtros seleccionados." }]
+  );
+  wsResumen["!cols"] = [
+    { wch: 6 },
+    { wch: 32 },
+    { wch: 22 },
+    { wch: 24 },
+    { wch: 26 },
+    { wch: 28 },
+    { wch: 24 },
+    { wch: 26 },
+    { wch: 26 },
+  ];
+  XLSX.utils.book_append_sheet(wb, wsResumen, "RESUMEN_POR_USUARIO");
+
+  // HOJA 2: ESCANEOS DIARIOS SUMINISTRADOS POR CADA USUARIO
+  const scanRows = filteredScans.map((s, idx) => ({
+    "N°": idx + 1,
+    "FECHA Y HORA": new Date(s.timestamp).toLocaleString(),
+    "FUNCIONARIO RESPONSABLE": s.userName,
+    "ROL": s.userRole,
+    "MICROCHIP (MC)": s.microchip,
+    "CHIP CORTO (7 DÍGITOS)": s.shortChip,
+    "HISTORIA CLÍNICA (HC)": s.hc,
+    "NOMBRE DEL FELINO": s.name,
+    "CANIL / UBICACIÓN EN GATERA": s.location,
+    "ESTADO CLÍNICO": s.status.toUpperCase(),
+    "CONDICIÓN CORPORAL": s.condicionCorporal,
+    "ESTADO DE SALUD": s.estadoSalud,
+    "ESTATUS RETROVIRAL": s.retroviralStatus,
+    "MANEJO ESPECIAL / FERAL": s.isFeral ? "SI (FERAL)" : "NO",
+    "TRATAMIENTO PRESCRITO": s.medicacion,
+    "FOTO REGISTRADA": s.hasPhoto ? "SÍ (FOTO EN SISTEMA)" : "NO",
+    "OBSERVACIONES MÉDICAS": s.observaciones,
+  }));
+
+  const wsScans = XLSX.utils.json_to_sheet(
+    scanRows.length > 0
+      ? scanRows
+      : [{ "INFORMACIÓN": "No hay registros de escaneos diarios para el período o usuario seleccionado." }]
+  );
+  wsScans["!cols"] = [
+    { wch: 6 },
+    { wch: 22 },
+    { wch: 32 },
+    { wch: 20 },
+    { wch: 22 },
+    { wch: 14 },
+    { wch: 14 },
+    { wch: 26 },
+    { wch: 24 },
+    { wch: 14 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 18 },
+    { wch: 16 },
+    { wch: 30 },
+    { wch: 20 },
+    { wch: 45 },
+  ];
+  XLSX.utils.book_append_sheet(wb, wsScans, "ESCANEOS_DIARIOS");
+
+  // HOJA 3: CONTROL DE FELINOS FALLECIDOS
+  const deceasedRows = filteredDeceased.map((d, idx) => ({
+    "N°": idx + 1,
+    "FECHA DE FALLECIMIENTO": d.fecha,
+    "REGISTRADO POR (MÉDICO/FUNCIONARIO)": d.userName,
+    "MICROCHIP (MC)": d.microchip,
+    "CHIP CORTO (7 DÍGITOS)": d.shortChip,
+    "HISTORIA CLÍNICA (HC)": d.hc,
+    "NOMBRE DEL FELINO": d.name,
+    "SEXO": d.sexo.toUpperCase(),
+    "RAZA": d.raza,
+    "COLOR": d.color,
+    "ÚLTIMA UBICACIÓN PREVIA (CANIL)": d.ubicacionPrevia,
+    "CAUSA DE DEFUNCIÓN / DIAGNÓSTICO": d.causa,
+    "MANEJO ESPECIAL / FERAL": d.isFeral ? "SI (FERAL)" : "NO",
+    "FOTO REGISTRADA": d.hasPhoto ? "SÍ (FOTO EN SISTEMA)" : "NO",
+    "OBSERVACIONES Y ANTECEDENTES": d.observaciones,
+  }));
+
+  const wsDeceased = XLSX.utils.json_to_sheet(
+    deceasedRows.length > 0
+      ? deceasedRows
+      : [{ "INFORMACIÓN": "No hay felinos registrados como fallecidos en el período o usuario seleccionado." }]
+  );
+  wsDeceased["!cols"] = [
+    { wch: 6 },
+    { wch: 18 },
+    { wch: 32 },
+    { wch: 22 },
+    { wch: 14 },
+    { wch: 14 },
+    { wch: 26 },
+    { wch: 10 },
+    { wch: 12 },
+    { wch: 24 },
+    { wch: 24 },
+    { wch: 40 },
+    { wch: 16 },
+    { wch: 18 },
+    { wch: 40 },
+  ];
+  XLSX.utils.book_append_sheet(wb, wsDeceased, "CONTROL_FALLECIDOS");
+
+  // Nombre de archivo descriptivo
+  let userLabel = "TODOS_LOS_USUARIOS";
+  if (userFilter !== "all" && userFilter.trim()) {
+    userLabel = normalizeStaffName(userFilter)
+      .replace(/[^a-zA-Z0-9]/g, "_")
+      .replace(/_+/g, "_")
+      .toUpperCase();
+  }
+  const fileName = `CBA_Escaneos_y_Fallecidos_${userLabel}_${todayStr}.xlsx`;
+  XLSX.writeFile(wb, fileName);
+
+  return {
+    totalScans: filteredScans.length,
+    totalDeceased: filteredDeceased.length,
+    fileName,
+  };
+}
+

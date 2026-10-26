@@ -26,6 +26,7 @@ import * as XLSX from "xlsx";
 import { exportGateraExcel, exportFallecidosExcel } from "@/lib/excelGenerator";
 import { BatchScannerModal } from "./BatchScannerModal";
 import { RegisterNewAnimalModal } from "./RegisterNewAnimalModal";
+import { ExportScansDeceasedModal } from "./ExportScansDeceasedModal";
 
 interface CensusTabProps {
   currentUser?: StaffMember | null;
@@ -43,6 +44,7 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isBatchOpen, setIsBatchOpen] = useState(false);
   const [isRegisterOpen, setIsRegisterOpen] = useState(false);
+  const [isExportScansModalOpen, setIsExportScansModalOpen] = useState(false);
   const [isRecordDeathOpen, setIsRecordDeathOpen] = useState(false);
   const [deathChip, setDeathChip] = useState("");
   const [deathCause, setDeathCause] = useState("");
@@ -569,11 +571,21 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
 
                 <button
                   type="button"
+                  onClick={() => setIsExportScansModalOpen(true)}
+                  className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 via-teal-700 to-emerald-800 hover:from-emerald-700 hover:to-teal-800 text-white rounded-2xl text-xs font-black flex items-center gap-2 shadow-lg shadow-emerald-700/25 active:scale-95 transition-all"
+                  title="Descargar en Excel los escaneos diarios y fallecidos por cada usuario"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-200" />
+                  <span>📥 Escaneos y Fallecidos por Usuario (.xlsx)</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={handleExportExcel}
                   className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl text-xs font-black flex items-center gap-2 shadow-lg shadow-slate-900/25 active:scale-95 transition-all"
                 >
                   <FileSpreadsheet className="w-4 h-4" />
-                  <span>Exportar (.xlsx)</span>
+                  <span>Exportar Maestro (.xlsx)</span>
                 </button>
 
                 <button
@@ -816,11 +828,21 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
+                  onClick={() => setIsExportScansModalOpen(true)}
+                  className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 via-teal-700 to-emerald-800 hover:from-emerald-700 hover:to-teal-800 text-white rounded-2xl text-xs font-black flex items-center gap-2 shadow-lg shadow-emerald-700/25 active:scale-95 transition-all"
+                  title="Descargar reporte oficial consolidado de escaneos y fallecidos por usuario"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-200" />
+                  <span>📥 Escaneos y Fallecidos por Usuario (.xlsx)</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={handleExportFallecidos}
                   className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl text-xs font-black flex items-center gap-2 shadow-lg shadow-slate-900/25 active:scale-95 transition-all"
                 >
                   <Download className="w-4 h-4 text-emerald-400" />
-                  <span>Exportar Reporte (.xlsx)</span>
+                  <span>Exportar Solo Fallecidos (.xlsx)</span>
                 </button>
 
                 {(currentUser ? (currentUser.role === "veterinario" || currentUser.role === "admin") : true) && (
@@ -1197,6 +1219,13 @@ export const CensusTab: React.FC<CensusTabProps> = ({ currentUser }) => {
           </div>
         </div>
       )}
+
+      {/* Modal de Exportación Avanzada en Excel de Escaneos y Fallecidos por Usuario */}
+      <ExportScansDeceasedModal
+        isOpen={isExportScansModalOpen}
+        onClose={() => setIsExportScansModalOpen(false)}
+        defaultUser={currentUser?.name || "all"}
+      />
     </div>
   );
 };
