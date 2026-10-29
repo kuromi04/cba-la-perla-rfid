@@ -93,13 +93,63 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
   const [allLocations, setAllLocations] = useState<string[]>(OFFICIAL_GATERA_LOCATIONS);
   const [selectedLocCategory, setSelectedLocCategory] = useState<string>("CUARENTENA");
 
+  const resetForm = () => {
+    setLocation("");
+    setHc("");
+    setSexoCode("MFA");
+    setRaza("DPC");
+    setIsFeral(false);
+    setColor("");
+    setTipoIngreso("RES");
+    setName("");
+    setFechaNacimiento("");
+    setEdadMeses("24 MESES");
+    setFechaIngreso(new Date().toISOString().split("T")[0]);
+    setCondicionCorporal("RANGO 3.0/5");
+    setEstadoSalud("Saludable");
+    setVifStatus("NEGATIVO");
+    setFelvStatus("NEGATIVO");
+    setHasTreatment(false);
+    setMedicacion("");
+    setObservacionesMedicas("");
+    setRequiereSeguimiento("NO");
+    setTipoSeguimiento("TRATAMIENTO");
+    setSistema("PREVENTIVO");
+    setTotalDoses(7);
+    setPeluqueria("NO");
+    setCorteUnas("NO");
+    setLimpiezaOidos("NO");
+    setPhotoUrl("");
+    setErrorMessage(null);
+    if (photoInputRef.current) photoInputRef.current.value = "";
+  };
+
   useEffect(() => {
-    const chipToSearch = (initialMicrochip || microchip).trim();
+    if (!isOpen) return;
+
+    resetForm();
+
+    const chipToSearch = (initialMicrochip || "").trim();
+    setMicrochip(chipToSearch);
     if (!chipToSearch) return;
-    if (initialMicrochip) setMicrochip(initialMicrochip.trim());
+
+    const isNumeric = /^\d+$/.test(chipToSearch);
+    const last7 = chipToSearch.length >= 7 && isNumeric ? chipToSearch.slice(-7) : null;
 
     searchAnimalSmart(chipToSearch).then(async (found) => {
+      // Validar coincidencia estricta con el chip buscado para evitar falsos positivos
+      let isStrictMatch = false;
       if (found) {
+        isStrictMatch =
+          found.microchip === chipToSearch ||
+          (Boolean(found.shortChip) && found.shortChip === chipToSearch) ||
+          (Boolean(last7) && (
+            (Boolean(found.shortChip) && found.shortChip === last7) ||
+            (Boolean(found.microchip) && found.microchip.length >= 7 && found.microchip.endsWith(last7!))
+          ));
+      }
+
+      if (found && isStrictMatch) {
         if (found.name && found.name !== "S/N") setName(found.name);
         if (found.location) setLocation(found.location);
         if (found.color) setColor(found.color);
@@ -118,19 +168,32 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
         if (found.photoUrl) setPhotoUrl(found.photoUrl);
       }
 
-      // Buscar datos adicionales en gateraRecords (medicación, pendientes, etc.)
-      const last7 = chipToSearch.slice(-7);
-      const catRec =
-        (await db.gateraRecords.where("microchip").equals(chipToSearch).first()) ||
-        (await db.gateraRecords.where("shortChip").equals(chipToSearch).first()) ||
-        (await db.gateraRecords.filter((g) => g.microchip.endsWith(last7) || chipToSearch.endsWith(g.microchip)).first());
+      // Buscar datos adicionales en gateraRecords (medicación, pendientes, etc.) con validación estricta
+      let catRec: GateraCat | null | undefined = null;
+      catRec = await db.gateraRecords.where("microchip").equals(chipToSearch).first();
+      if (!catRec) {
+        catRec = await db.gateraRecords.where("shortChip").equals(chipToSearch).first();
+      }
+      if (!catRec && last7) {
+        catRec = await db.gateraRecords.filter((g) => Boolean(g.microchip && g.microchip.length >= 7 && g.microchip.endsWith(last7!))).first();
+      }
 
       if (catRec) {
-        if (!found?.name && catRec.nombre) setName(catRec.nombre);
-        if (!found?.location && catRec.ubicacion) setLocation(catRec.ubicacion);
-        if (!found?.color && catRec.color) setColor(catRec.color);
-        if (!found?.breed && catRec.raza) setRaza(catRec.raza);
-        if (!found?.hc && catRec.hc) setHc(catRec.hc);
+        if (!isStrictMatch || !found?.name) {
+          if (catRec.nombre) setName(catRec.nombre);
+        }
+        if (!isStrictMatch || !found?.location) {
+          if (catRec.ubicacion) setLocation(catRec.ubicacion);
+        }
+        if (!isStrictMatch || !found?.color) {
+          if (catRec.color) setColor(catRec.color);
+        }
+        if (!isStrictMatch || !found?.breed) {
+          if (catRec.raza) setRaza(catRec.raza);
+        }
+        if (!isStrictMatch || !found?.hc) {
+          if (catRec.hc) setHc(catRec.hc);
+        }
         if (catRec.medicacion && catRec.medicacion !== "Ninguno") {
           setHasTreatment(true);
           setMedicacion(catRec.medicacion);
@@ -138,11 +201,12 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
         if (catRec.sistema) setSistema(catRec.sistema);
         if (catRec.edad) setEdadMeses(catRec.edad);
         if (catRec.fechaIngreso) setFechaIngreso(catRec.fechaIngreso);
-        if (!found?.photoUrl && catRec.photoUrl) setPhotoUrl(catRec.photoUrl);
+        if (catRec.photoUrl && (!found?.photoUrl || !isStrictMatch)) setPhotoUrl(catRec.photoUrl);
       }
 
-      // Si no tiene foto local, buscar en Supabase
-      if (!found?.photoUrl && !catRec?.photoUrl && typeof window !== "undefined" && navigator.onLine) {
+      // Si no tiene foto local y el animal coincide de forma estricta, buscar en Supabase
+      const hasPhoto = (isStrictMatch && found?.photoUrl) || catRec?.photoUrl;
+      if (!hasPhoto && typeof window !== "undefined" && navigator.onLine) {
         try {
           const { getSupabaseClient } = await import("@/lib/supabase");
           const client = getSupabaseClient();
@@ -160,7 +224,7 @@ export const RegisterNewAnimalModal: React.FC<RegisterNewAnimalModalProps> = ({
         } catch {}
       }
     });
-  }, [initialMicrochip]);
+  }, [isOpen, initialMicrochip]);
 
   const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

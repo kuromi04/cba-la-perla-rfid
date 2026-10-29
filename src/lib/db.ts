@@ -780,7 +780,9 @@ export async function searchAnimalSmart(query: string): Promise<Animal | null> {
   const clean = query.trim().toUpperCase();
   if (!clean) return null;
 
-  const last7 = clean.length >= 7 ? clean.slice(-7) : clean;
+  const isDigits = /^\d+$/.test(clean);
+  const isFullChip = /^\d{10,16}$/.test(clean);
+  const validLast7 = clean.length >= 7 && isDigits ? clean.slice(-7) : null;
 
   // 1. Coincidencia exacta por microchip completo
   let animal = await db.animals.where("microchip").equals(clean).first();
@@ -789,8 +791,8 @@ export async function searchAnimalSmart(query: string): Promise<Animal | null> {
   if (!animal) {
     animal = await db.animals.where("shortChip").equals(clean).first();
   }
-  if (!animal && last7) {
-    animal = await db.animals.where("shortChip").equals(last7).first();
+  if (!animal && validLast7) {
+    animal = await db.animals.where("shortChip").equals(validLast7).first();
   }
 
   // 3. Coincidencia por Historia Clínica (HC)
@@ -805,7 +807,11 @@ export async function searchAnimalSmart(query: string): Promise<Animal | null> {
         c.microchip === clean ||
         c.shortChip === clean ||
         c.hc === clean ||
-        (Boolean(last7) && (c.shortChip === last7 || c.microchip.endsWith(last7) || clean.endsWith(c.microchip)))
+        (Boolean(validLast7) && (
+          (Boolean(c.shortChip) && c.shortChip === validLast7) ||
+          (Boolean(c.microchip) && c.microchip.length >= 7 && c.microchip.endsWith(validLast7!)) ||
+          (Boolean(c.microchip) && c.microchip.length >= 7 && isDigits && clean.endsWith(c.microchip))
+        ))
     )
     .first();
 
@@ -844,8 +850,9 @@ export async function searchAnimalSmart(query: string): Promise<Animal | null> {
   // Si se encontró el animal pero no tiene foto, verificar si gateraRecords sí la tiene
   if (animal && !animal.photoUrl) {
     const chipToFind = animal.microchip;
+    const animShort = animal.shortChip;
     const gRec = await db.gateraRecords
-      .filter((g) => g.microchip === chipToFind || (Boolean(animal!.shortChip) && g.shortChip === animal!.shortChip))
+      .filter((g) => g.microchip === chipToFind || Boolean(animShort && animShort.length >= 6 && g.shortChip === animShort))
       .first();
     if (gRec?.photoUrl) {
       animal.photoUrl = gRec.photoUrl;
@@ -857,30 +864,35 @@ export async function searchAnimalSmart(query: string): Promise<Animal | null> {
 
   if (animal) return animal;
 
-  // 5. Sufijo en animales generales
-  const all = await db.animals.toArray();
-  const bySuffix = all.find(
-    (a) =>
-      a.microchip.endsWith(clean) ||
-      clean.endsWith(a.microchip) ||
-      (Boolean(last7) && (a.shortChip === last7 || a.microchip.endsWith(last7) || clean.endsWith(a.shortChip || ""))) ||
-      (a.hc && a.hc === clean)
-  );
-  if (bySuffix) {
-    if (!bySuffix.photoUrl && cat?.photoUrl) {
-      bySuffix.photoUrl = cat.photoUrl;
+  // 5. Sufijo en animales generales (SOLO si hay sufijo numérico válido de 7 dígitos)
+  if (validLast7) {
+    const all = await db.animals.toArray();
+    const bySuffix = all.find(
+      (a) =>
+        (a.shortChip && a.shortChip === validLast7) ||
+        (a.microchip && a.microchip.length >= 7 && a.microchip.endsWith(validLast7)) ||
+        (a.hc && a.hc === clean) ||
+        (Boolean(a.microchip) && a.microchip.length >= 7 && isDigits && clean.endsWith(a.microchip))
+    );
+    if (bySuffix) {
+      if (!bySuffix.photoUrl && cat?.photoUrl) {
+        bySuffix.photoUrl = cat.photoUrl;
+      }
+      return bySuffix;
     }
-    return bySuffix;
   }
 
-  // 6. Búsqueda por nombre o canil
-  const byName = all.find(
-    (a) =>
-      Boolean(a.name && a.name.toUpperCase().includes(clean)) ||
-      Boolean(a.breed && a.breed.toUpperCase().includes(clean)) ||
-      Boolean(a.location && a.location.toUpperCase().includes(clean))
-  );
-  if (byName) return byName;
+  // 6. Búsqueda por nombre o canil (únicamente si NO es un número largo de microchip)
+  if (!isFullChip && clean.length >= 3) {
+    const all = await db.animals.toArray();
+    const byName = all.find(
+      (a) =>
+        Boolean(a.name && a.name.toUpperCase().includes(clean)) ||
+        Boolean(a.breed && a.breed.toUpperCase().includes(clean)) ||
+        Boolean(a.location && a.location.toUpperCase().includes(clean))
+    );
+    if (byName) return byName;
+  }
 
   return null;
 }
